@@ -59,6 +59,7 @@ class OKTab(QWidget):
         self.rack_input.setFont(QFont("Segoe UI", 15))
         self.rack_input.setMinimumHeight(50)
         self.rack_input.returnPressed.connect(self._on_scan)
+        self.rack_input.textChanged.connect(self._force_upper)
         lay.addLayout(self._row("RACK NUMBER:", self.rack_input))
 
         # Model
@@ -150,6 +151,15 @@ class OKTab(QWidget):
         self.rack_input.setFocus()
 
     # ── called by MainWindow on tab switch ───────────────────────────────────
+
+    def _force_upper(self, text: str):
+        uppered = text.upper()
+        if uppered != text:
+            cursor = self.rack_input.cursorPosition()
+            self.rack_input.blockSignals(True)
+            self.rack_input.setText(uppered)
+            self.rack_input.setCursorPosition(cursor)
+            self.rack_input.blockSignals(False)
 
     def on_activate(self):
         self._active.refresh()

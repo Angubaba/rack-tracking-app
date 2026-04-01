@@ -137,6 +137,12 @@ class EditScanDialog(QDialog):
                     " WHERE id=?",
                     (rack_number, model, quantity, inspected_by, self._scan_id),
                 )
+                # Mirror the same fields into the linked TH scan if one exists
+                conn.execute(
+                    "UPDATE th_scans SET rack_number=?, model=?, quantity=?, inspected_by=?"
+                    " WHERE ok_scan_id=?",
+                    (rack_number, model, quantity, inspected_by, self._scan_id),
+                )
                 conn.commit()
 
         else:
