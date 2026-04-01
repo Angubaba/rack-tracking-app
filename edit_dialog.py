@@ -3,7 +3,7 @@ import sqlite3
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QLineEdit, QSpinBox, QPushButton, QDialogButtonBox,
+    QLineEdit, QSpinBox, QPushButton, QDialogButtonBox, QWidget,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
@@ -54,7 +54,6 @@ class EditScanDialog(QDialog):
         root.addWidget(buttons)
 
     def _row(self, label: str, widget) -> QWidget:
-        from PyQt6.QtWidgets import QWidget
         container = QWidget()
         lay = QHBoxLayout(container)
         lay.setContentsMargins(0, 0, 0, 0)
