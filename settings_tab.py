@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QSpinBox, QPushButton, QFrame,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox,
+    QPushButton, QFrame,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
@@ -20,28 +20,24 @@ class SettingsTab(QWidget):
         root.setContentsMargins(24, 20, 24, 20)
         root.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        title = QLabel("Lock Settings")
+        title = QLabel("Settings")
         title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
         root.addWidget(title)
 
         root.addWidget(self._build_card(
             "Duplicate Block Window",
-            "Blocks re-scanning the same Rack Number + Model combination "
-            "within this window.\nThis is a hard block — cannot be overridden.",
-            "minutes",
-            1, 1440,
-            lambda sb: setattr(self, "_dup_spin", sb),
-            lambda: self._dup_spin,
+            "OK RACKS tab only",
+            "Prevents the same rack from being scanned as OK more than once within this window.\n"
+            "Hard block — operator cannot override.",
+            "_dup_spin",
         ))
 
         root.addWidget(self._build_card(
             "Completion Lock Window",
-            "After any scan, the rack is soft-locked for this duration.\n"
-            "A confirmation dialog is shown — operator can still override.",
-            "minutes",
-            1, 1440,
-            lambda sb: setattr(self, "_lock_spin", sb),
-            lambda: self._lock_spin,
+            "GOING TO TH tab only",
+            "If a rack was already sent to TH within this window, a confirmation dialog appears.\n"
+            "Soft block — operator can override. Completely separate from the duplicate block.",
+            "_lock_spin",
         ))
 
         save_btn = QPushButton("Save Settings")
@@ -53,34 +49,32 @@ class SettingsTab(QWidget):
         )
         save_btn.clicked.connect(self._on_save)
 
-        self._status_label = QLabel("")
-        self._status_label.setFont(QFont("Segoe UI", 11))
+        self._status = QLabel("")
+        self._status.setFont(QFont("Segoe UI", 11))
 
         btn_row = QHBoxLayout()
         btn_row.addWidget(save_btn)
-        btn_row.addWidget(self._status_label)
+        btn_row.addWidget(self._status)
         btn_row.addStretch()
         root.addLayout(btn_row)
 
-    def _build_card(
-        self,
-        title: str,
-        description: str,
-        unit: str,
-        min_val: int,
-        max_val: int,
-        setter,
-        getter,
-    ) -> QFrame:
+    def _build_card(self, title: str, tag: str, description: str, attr: str) -> QFrame:
         card = QFrame()
         card.setStyleSheet("QFrame{background-color:#313244;border-radius:8px;}")
         lay = QVBoxLayout(card)
         lay.setContentsMargins(16, 12, 16, 14)
-        lay.setSpacing(6)
+        lay.setSpacing(4)
 
+        hdr_row = QHBoxLayout()
         lbl = QLabel(title)
         lbl.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
-        lay.addWidget(lbl)
+        tag_lbl = QLabel(f"  [{tag}]")
+        tag_lbl.setFont(QFont("Segoe UI", 10))
+        tag_lbl.setStyleSheet("color:#89b4fa;")
+        hdr_row.addWidget(lbl)
+        hdr_row.addWidget(tag_lbl)
+        hdr_row.addStretch()
+        lay.addLayout(hdr_row)
 
         desc = QLabel(description)
         desc.setFont(QFont("Segoe UI", 10))
@@ -90,12 +84,12 @@ class SettingsTab(QWidget):
 
         spin_row = QHBoxLayout()
         spin = QSpinBox()
-        spin.setRange(min_val, max_val)
-        spin.setSuffix(f"  {unit}")
+        spin.setRange(1, 1440)
+        spin.setSuffix("  minutes")
         spin.setFont(QFont("Segoe UI", 13))
         spin.setMinimumHeight(40)
-        spin.setFixedWidth(160)
-        setter(spin)
+        spin.setFixedWidth(180)
+        setattr(self, attr, spin)
         spin_row.addWidget(spin)
         spin_row.addStretch()
         lay.addLayout(spin_row)
@@ -112,5 +106,5 @@ class SettingsTab(QWidget):
             "duplicate_lock_minutes":  self._dup_spin.value(),
             "completion_lock_minutes": self._lock_spin.value(),
         })
-        self._status_label.setText("Saved.")
-        self._status_label.setStyleSheet("color:#a6e3a1;font-weight:bold;")
+        self._status.setText("Saved.")
+        self._status.setStyleSheet("color:#a6e3a1;font-weight:bold;")

@@ -5,7 +5,8 @@ from PyQt6.QtWidgets import QApplication, QMainWindow, QTabWidget
 from PyQt6.QtGui import QFont
 
 import database
-from scan_tab import ScanTab
+from ok_tab import OKTab
+from th_tab import THTab
 from lookup_tab import LookupTab
 from settings_tab import SettingsTab
 
@@ -23,7 +24,7 @@ QTabWidget::pane {
 QTabBar::tab {
     background-color: #313244;
     color: #cdd6f4;
-    padding: 9px 32px;
+    padding: 9px 28px;
     font-size: 13px;
     font-weight: bold;
     border: 1px solid #45475a;
@@ -124,30 +125,32 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("QC Rack Tracking System")
-        self.setMinimumSize(900, 680)
+        self.setMinimumSize(960, 700)
 
         self._tabs = QTabWidget()
-        self._scan_tab = ScanTab()
-        self._lookup_tab = LookupTab()
-
+        self._ok_tab       = OKTab()
+        self._th_tab       = THTab()
+        self._lookup_tab   = LookupTab()
         self._settings_tab = SettingsTab()
 
-        self._tabs.addTab(self._scan_tab, "  SCAN  ")
-        self._tabs.addTab(self._lookup_tab, "  LOOKUP  ")
+        self._tabs.addTab(self._ok_tab,       "  OK RACKS  ")
+        self._tabs.addTab(self._th_tab,       "  GOING TO TH  ")
+        self._tabs.addTab(self._lookup_tab,   "  LOOKUP  ")
         self._tabs.addTab(self._settings_tab, "  SETTINGS  ")
-        self._tabs.currentChanged.connect(self._on_tab_changed)
 
+        self._tabs.currentChanged.connect(self._on_tab_changed)
         self.setCentralWidget(self._tabs)
 
     def _on_tab_changed(self, index: int):
-        if index == 0:
-            self._scan_tab.focus_barcode()
-        else:
+        tab = self._tabs.widget(index)
+        if hasattr(tab, "on_activate"):
+            tab.on_activate()
+        elif index == 2:
             self._lookup_tab.search_input.setFocus()
 
     def showEvent(self, event):
         super().showEvent(event)
-        self._scan_tab.focus_barcode()
+        self._ok_tab.on_activate()
 
 
 def main():
@@ -159,7 +162,6 @@ def main():
 
     window = MainWindow()
     window.show()
-
     sys.exit(app.exec())
 
 

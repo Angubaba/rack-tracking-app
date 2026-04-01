@@ -1,5 +1,5 @@
-"""Business logic: validation, lock, duplicate prevention."""
-from datetime import datetime, timezone, timedelta
+"""Business logic for OK and TH scan validation."""
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Optional
 
@@ -12,8 +12,7 @@ from utils import validate_rack_number
 class ScanResult:
     success: bool
     message: str
-    # 'success' | 'warning' | 'error' | 'confirm_required'
-    status: str = "success"
+    status: str = "success"   # 'success' | 'warning' | 'error'
     scan_id: Optional[int] = None
 
 
@@ -28,92 +27,81 @@ def _parse_utc(iso_str: str) -> datetime:
     return dt
 
 
-def _is_duplicate(rack_number: str, model: str) -> bool:
-    """Hard block: same rack + same model scanned within duplicate_lock_minutes."""
-    dup_minutes = settings.load()["duplicate_lock_minutes"]
-    now = _now_utc()
-    for scan in database.get_rack_scans(rack_number):
-        if scan["model"] == model:
-            age = (now - _parse_utc(scan["created_at"])).total_seconds()
-            if age < dup_minutes * 60:
-                return True
-    return False
-
-
-def _is_locked(rack_number: str) -> bool:
-    """Completion lock: rack was scanned within completion_lock_minutes."""
-    lock_minutes = settings.load()["completion_lock_minutes"]
-    last = database.get_rack_last_scan(rack_number)
-    if last:
-        age = (_now_utc() - _parse_utc(last["created_at"])).total_seconds()
-        if age < lock_minutes * 60:
-            return True
-    return False
-
-
-def perform_scan(
+def perform_ok_scan(
     rack_number: str,
     model: str,
     quantity: int,
     inspected_by: str,
-    override: bool = False,
 ) -> ScanResult:
-    """
-    Attempt to record a scan.
-
-    If status == 'confirm_required', caller should prompt and retry with override=True.
-    """
-    # ── field validation ────────────────────────────────────────────────────
+    # ── validation ───────────────────────────────────────────────────────────
     if not rack_number:
         return ScanResult(False, "Rack Number is required.", "error")
     if not validate_rack_number(rack_number):
         return ScanResult(
             False,
-            f"Invalid rack format: '{rack_number}'.\nExpected PR/### or MR/### (e.g. PR/042, MR/7).",
+            f"Invalid format '{rack_number}'. Expected PR/### or MR/###.",
             "error",
         )
     if not model:
         return ScanResult(False, "Model is required.", "error")
-    if len(model) > 64:
-        return ScanResult(False, "Model must be 64 characters or fewer.", "error")
     if not (1 <= quantity <= 10_000):
         return ScanResult(False, "Quantity must be between 1 and 10,000.", "error")
     if not inspected_by:
         return ScanResult(False, "Inspected By is required.", "error")
-    if len(inspected_by) > 64:
-        return ScanResult(False, "Inspected By must be 64 characters or fewer.", "error")
 
-    # ── duplicate block (hard — no override) ────────────────────────────────
-    dup_minutes  = settings.load()["duplicate_lock_minutes"]
-    lock_minutes = settings.load()["completion_lock_minutes"]
-
-    if _is_duplicate(rack_number, model):
+    # ── already active in FG ─────────────────────────────────────────────────
+    if database.get_active_rack(rack_number):
         return ScanResult(
             False,
-            (
-                f"Duplicate scan blocked: rack {rack_number} with model {model} "
-                f"was already scanned within the last {dup_minutes} minutes."
-            ),
+            f"Rack {rack_number} is already in FG. Send it to TH before re-scanning.",
             "error",
         )
 
-    # ── completion lock (soft — override allowed) ───────────────────────────
-    if not override and _is_locked(rack_number):
-        return ScanResult(
-            False,
-            (
-                f"Rack {rack_number} was scanned less than {lock_minutes} minutes ago.\n\n"
-                f"Override and scan anyway?"
-            ),
-            "confirm_required",
-        )
+    # ── duplicate lock (time-based) ──────────────────────────────────────────
+    dup_minutes = settings.load()["duplicate_lock_minutes"]
+    now = _now_utc()
+    for scan in database.get_ok_scans_for_rack(rack_number):
+        age = (now - _parse_utc(scan["created_at"])).total_seconds()
+        if age < dup_minutes * 60:
+            return ScanResult(
+                False,
+                (
+                    f"Rack {rack_number} was scanned as OK less than "
+                    f"{dup_minutes} minutes ago."
+                ),
+                "error",
+            )
 
-    # ── record ──────────────────────────────────────────────────────────────
-    scan_id = database.insert_scan(rack_number, model, quantity, inspected_by)
+    scan_id = database.insert_ok_scan(rack_number, model, quantity, inspected_by)
+    return ScanResult(True, f"Rack {rack_number} added to FG.", "success", scan_id)
 
-    return ScanResult(
-        True,
-        f"Scan recorded: {rack_number}  ·  {model}  ·  Qty {quantity}",
-        "success",
-        scan_id,
-    )
+
+def check_th_completion_lock(rack_number: str) -> ScanResult | None:
+    """
+    TH tab only — checks if this rack was sent to TH recently.
+    Returns a confirm_required ScanResult if locked, None if clear.
+    This is a SOFT lock — caller shows a confirmation dialog and proceeds if user agrees.
+    Completely independent of the OK duplicate lock.
+    """
+    lock_minutes = settings.load()["completion_lock_minutes"]
+    now = _now_utc()
+
+    with database._connect() as conn:
+        rows = conn.execute(
+            "SELECT created_at FROM th_scans WHERE rack_number = ?"
+            " ORDER BY created_at DESC LIMIT 1",
+            (rack_number,),
+        ).fetchone()
+
+    if rows:
+        age = (now - _parse_utc(rows["created_at"])).total_seconds()
+        if age < lock_minutes * 60:
+            return ScanResult(
+                False,
+                (
+                    f"Rack {rack_number} was already sent to TH less than "
+                    f"{lock_minutes} minutes ago.\n\nOverride and send again?"
+                ),
+                "confirm_required",
+            )
+    return None

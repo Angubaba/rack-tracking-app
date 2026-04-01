@@ -4,8 +4,8 @@ from database import get_db_path
 _SETTINGS_PATH = get_db_path().parent / "settings.json"
 
 DEFAULTS = {
-    "duplicate_lock_minutes": 10,
-    "completion_lock_minutes": 10,
+    "duplicate_lock_minutes":   10,   # OK tab — hard block, same rack re-scanned as OK
+    "completion_lock_minutes":  10,   # TH tab — soft block, rack already sent to TH recently
 }
 
 
