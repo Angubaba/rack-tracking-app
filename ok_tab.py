@@ -1,9 +1,9 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QSpinBox, QFrame,
+    QPushButton, QFrame,
 )
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QIntValidator
 
 from logic import perform_ok_scan
 from utils import now_ist_display
@@ -58,7 +58,7 @@ class OKTab(QWidget):
         self.rack_input.setPlaceholderText("Scan barcode  (PR/### or MR/###)…")
         self.rack_input.setFont(QFont("Segoe UI", 15))
         self.rack_input.setMinimumHeight(50)
-        self.rack_input.returnPressed.connect(self._on_scan)
+        self.rack_input.returnPressed.connect(lambda: self.model_input.setFocus())
         self.rack_input.textChanged.connect(self._force_upper)
         lay.addLayout(self._row("RACK NUMBER:", self.rack_input))
 
@@ -67,15 +67,17 @@ class OKTab(QWidget):
         self.model_input.setPlaceholderText("Enter model name…")
         self.model_input.setFont(QFont("Segoe UI", 13))
         self.model_input.setMinimumHeight(40)
+        self.model_input.returnPressed.connect(lambda: self.qty_input.setFocus())
         lay.addLayout(self._row("MODEL:", self.model_input))
 
-        # Quantity
-        self.qty_input = QSpinBox()
-        self.qty_input.setRange(1, 10_000)
-        self.qty_input.setValue(1)
+        # Quantity — plain text input, empty by default
+        self.qty_input = QLineEdit()
+        self.qty_input.setPlaceholderText("Quantity…")
+        self.qty_input.setValidator(QIntValidator(1, 10_000))
         self.qty_input.setFont(QFont("Segoe UI", 13))
         self.qty_input.setMinimumHeight(40)
         self.qty_input.setFixedWidth(140)
+        self.qty_input.returnPressed.connect(lambda: self.inspector_input.setFocus())
         qty_row = QHBoxLayout()
         qty_row.addLayout(self._row("QUANTITY:", self.qty_input, stretch=False))
         qty_row.addStretch()
@@ -86,6 +88,7 @@ class OKTab(QWidget):
         self.inspector_input.setPlaceholderText("Inspector name or ID…")
         self.inspector_input.setFont(QFont("Segoe UI", 13))
         self.inspector_input.setMinimumHeight(40)
+        self.inspector_input.returnPressed.connect(self._on_scan)
         lay.addLayout(self._row("INSPECTED BY:", self.inspector_input))
 
         return frame
@@ -136,8 +139,15 @@ class OKTab(QWidget):
     def _on_scan(self):
         rack_number  = self.rack_input.text().strip().upper()
         model        = self.model_input.text().strip().upper()
-        quantity     = self.qty_input.value()
+        qty_text     = self.qty_input.text().strip()
         inspected_by = self.inspector_input.text().strip().upper()
+
+        if not qty_text:
+            self.status_label.setStyleSheet("color:#f38ba8;font-weight:bold;")
+            self.status_label.setText("Quantity is required.")
+            self.qty_input.setFocus()
+            return
+        quantity = int(qty_text)
 
         result = perform_ok_scan(rack_number, model, quantity, inspected_by)
         color = STATUS_COLOR.get(result.status, "#cdd6f4")
@@ -146,6 +156,9 @@ class OKTab(QWidget):
 
         if result.success:
             self.rack_input.clear()
+            self.model_input.clear()
+            self.qty_input.clear()
+            self.inspector_input.clear()
             self._active.refresh()
 
         self.rack_input.setFocus()
