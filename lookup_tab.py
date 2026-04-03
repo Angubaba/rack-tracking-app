@@ -414,11 +414,16 @@ class LookupTab(QWidget):
             c.alignment = CENTER; c.border = BORDER
         ws.row_dimensions[1].height = 22
 
+        WRAP_CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
         for i, ev in enumerate(self._results, 1):
             if ev["event_type"] == "OK":
                 pcbs = database.get_pcb_samples(ev["id"])
-                pcb_text = ", ".join(r["pcb_id"] for r in pcbs) if pcbs else ""
+                pcb_ids = [r["pcb_id"] for r in pcbs]
+                # Each PCB ID on its own line inside the cell
+                pcb_text = "\n".join(pcb_ids) if pcb_ids else ""
             else:
+                pcb_ids  = []
                 pcb_text = ""
             row_data = [
                 i,
@@ -436,9 +441,16 @@ class LookupTab(QWidget):
             for col in range(1, len(row_data) + 1):
                 c = ws.cell(i + 1, col)
                 c.fill = fill; c.font = NORMAL_FONT
-                c.alignment = CENTER; c.border = BORDER
+                c.border = BORDER
+                # PCB Samples column (col 8) — wrap + auto row height
+                if col == 8 and pcb_ids:
+                    c.alignment = WRAP_CENTER
+                    ws.row_dimensions[i + 1].height = max(15 * len(pcb_ids), 20)
+                else:
+                    c.alignment = CENTER
 
-        for col, w in enumerate([9, 8, 16, 20, 12, 20, 20, 22], 1):
+        # Col widths: Sr, Type, Rack, Model, Qty, InspectedBy, TakenBy, PCBSamples, DateTime
+        for col, w in enumerate([9, 8, 16, 20, 12, 20, 20, 28, 22], 1):
             ws.column_dimensions[get_column_letter(col)].width = w
 
         # ── Sheet 2: Summary ─────────────────────────────────────────────────

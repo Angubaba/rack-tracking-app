@@ -220,3 +220,15 @@ def get_pcb_samples(ok_scan_id: int) -> list:
             "SELECT pcb_id FROM pcb_samples WHERE ok_scan_id = ? ORDER BY id ASC",
             (ok_scan_id,),
         ).fetchall()
+
+
+def get_all_pcb_ids_for_rack(rack_number: str) -> set:
+    """Return every PCB ID ever recorded for this rack across all OK scans."""
+    with _connect() as conn:
+        rows = conn.execute("""
+            SELECT p.pcb_id
+            FROM pcb_samples p
+            JOIN ok_scans o ON p.ok_scan_id = o.id
+            WHERE o.rack_number = ?
+        """, (rack_number,)).fetchall()
+    return {r["pcb_id"] for r in rows}

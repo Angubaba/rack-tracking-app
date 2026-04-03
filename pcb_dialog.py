@@ -6,11 +6,14 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
+import database
+
 
 class PCBSamplingDialog(QDialog):
     """
     Shown after OK scan validation passes.
     Inspector scans PCB IDs one at a time (barcode scanner friendly).
+    Blocks PCB IDs already recorded for this rack in any prior OK scan.
     After accept(), read self.pcb_ids (may be empty if skipped).
     """
 
@@ -18,6 +21,8 @@ class PCBSamplingDialog(QDialog):
         super().__init__(parent)
         self._rack_number = rack_number
         self.pcb_ids: list[str] = []
+        # Pre-load all PCBs ever recorded for this rack
+        self._historic: set[str] = database.get_all_pcb_ids_for_rack(rack_number)
         self.setWindowTitle("Sample PCB IDs")
         self.setMinimumWidth(480)
         self.setMinimumHeight(420)
@@ -114,7 +119,13 @@ class PCBSamplingDialog(QDialog):
         if not pcb_id:
             return
         if pcb_id in self.pcb_ids:
-            self._dup_label.setText(f"{pcb_id} already added.")
+            self._dup_label.setText(f"{pcb_id} already added in this session.")
+            self._input.selectAll()
+            return
+        if pcb_id in self._historic:
+            self._dup_label.setText(
+                f"{pcb_id} was already sampled for rack {self._rack_number} in a previous scan."
+            )
             self._input.selectAll()
             return
         self._dup_label.setText("")
