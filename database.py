@@ -6,9 +6,10 @@ from pathlib import Path
 
 def get_db_path() -> Path:
     if getattr(sys, "frozen", False):
-        import os
-        base = Path(os.environ.get("APPDATA", Path.home())) / "RackTracker"
+        # Running as packaged .exe — store next to the exe
+        base = Path(sys.executable).parent
     else:
+        # Running as script — store next to main.py
         base = Path(__file__).parent
     base.mkdir(parents=True, exist_ok=True)
     return base / "rack_track.db"
