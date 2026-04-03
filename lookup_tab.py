@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QTableWidget, QTableWidgetItem,
     QMessageBox, QFrame, QHeaderView, QDateEdit, QFileDialog,
+    QDialog, QListWidget, QListWidgetItem,
 )
 from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QFont
@@ -15,12 +16,42 @@ from edit_dialog import EditScanDialog
 
 IST_OFFSET = timedelta(hours=5, minutes=30)
 
+
+def _show_pcb_popup(pcb_ids: list, parent=None):
+    """Show a simple dialog listing all PCB IDs."""
+    dlg = QDialog(parent)
+    dlg.setWindowTitle(f"PCB Sample IDs  ({len(pcb_ids)} total)")
+    dlg.setMinimumWidth(320)
+    dlg.setMinimumHeight(280)
+    lay = QVBoxLayout(dlg)
+    lay.setContentsMargins(14, 12, 14, 12)
+    lay.setSpacing(8)
+
+    title = QLabel(f"{len(pcb_ids)} PCB(s) sampled:")
+    title.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+    lay.addWidget(title)
+
+    lst = QListWidget()
+    lst.setFont(QFont("Segoe UI", 12))
+    lst.setAlternatingRowColors(True)
+    for pid in pcb_ids:
+        lst.addItem(QListWidgetItem(pid))
+    lay.addWidget(lst)
+
+    close_btn = QPushButton("Close")
+    close_btn.setMinimumHeight(36)
+    close_btn.clicked.connect(dlg.accept)
+    lay.addWidget(close_btn)
+
+    dlg.exec()
+
+
 HEADERS = ["Sr.No.", "Type", "Rack No.", "Model", "Qty",
            "Inspected By", "Taken By", "PCB Samples", "Date/Time (IST)", "", ""]
 
 TYPE_COLORS = {
-    "OK": "#a6e3a1",
-    "TH": "#89b4fa",
+    "OK": "#2f9e44",
+    "TH": "#1971c2",
 }
 
 
@@ -148,7 +179,8 @@ class LookupTab(QWidget):
         self.table.setHorizontalHeaderLabels(HEADERS)
         hh = self.table.horizontalHeader()
         hh.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        for col, width in {0: 55, 1: 55, 4: 60, 8: 70, 9: 70}.items():
+        # Fixed-width columns: Sr.No, Type, Qty, PCB Samples, Date/Time, Edit, Delete
+        for col, width in {0: 55, 1: 55, 4: 60, 7: 110, 8: 155, 9: 65, 10: 70}.items():
             hh.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
             self.table.setColumnWidth(col, width)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -156,6 +188,7 @@ class LookupTab(QWidget):
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(False)
+        self.table.cellDoubleClicked.connect(self._on_cell_double_clicked)
         lay.addWidget(self.table)
         return container
 
@@ -219,11 +252,13 @@ class LookupTab(QWidget):
     def _populate_table(self, results: list):
         self.table.setRowCount(len(results))
         for row, ev in enumerate(results):
-            # PCB samples only exist for OK scans
+            # PCB samples — only for OK scans
             if ev["event_type"] == "OK":
-                pcbs = database.get_pcb_samples(ev["id"])
-                pcb_text = ", ".join(r["pcb_id"] for r in pcbs) if pcbs else "—"
+                pcb_rows = database.get_pcb_samples(ev["id"])
+                pcb_ids  = [r["pcb_id"] for r in pcb_rows]
+                pcb_text = f"{len(pcb_ids)} sampled" if pcb_ids else "0 sampled"
             else:
+                pcb_ids  = []
                 pcb_text = "—"
 
             values = [
@@ -246,6 +281,11 @@ class LookupTab(QWidget):
                             TYPE_COLORS.get(ev["event_type"], "#212529")
                         )
                     )
+                # Store PCB IDs on the PCB cell for double-click retrieval
+                if col == 7:
+                    item.setData(Qt.ItemDataRole.UserRole, pcb_ids)
+                    if pcb_ids:
+                        item.setToolTip("Double-click to view PCB IDs")
                 self.table.setItem(row, col, item)
 
             scan_type = ev["event_type"].lower()
@@ -271,6 +311,19 @@ class LookupTab(QWidget):
                        rack=ev["rack_number"]: self._delete(st, sid, rack)
             )
             self.table.setCellWidget(row, 10, del_btn)
+
+    # ── double-click PCB cell ────────────────────────────────────────────────
+
+    def _on_cell_double_clicked(self, row: int, col: int):
+        if col != 7:
+            return
+        item = self.table.item(row, col)
+        if not item:
+            return
+        pcb_ids = item.data(Qt.ItemDataRole.UserRole) or []
+        if not pcb_ids:
+            return
+        _show_pcb_popup(pcb_ids, self)
 
     # ── edit / delete ────────────────────────────────────────────────────────
 
