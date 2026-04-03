@@ -45,7 +45,7 @@ class SettingsTab(QWidget):
         save_btn.setMinimumWidth(160)
         save_btn.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
         save_btn.setStyleSheet(
-            "background-color:#a6e3a1;color:#1e1e2e;border-radius:5px;"
+            "background-color:#2f9e44;color:#ffffff;border-radius:5px;"
         )
         save_btn.clicked.connect(self._on_save)
 
@@ -60,7 +60,7 @@ class SettingsTab(QWidget):
 
     def _build_card(self, title: str, tag: str, description: str, attr: str) -> QFrame:
         card = QFrame()
-        card.setStyleSheet("QFrame{background-color:#313244;border-radius:8px;}")
+        card.setStyleSheet("QFrame{background-color:#f1f3f5;border-radius:8px;border:1px solid #dee2e6;}")
         lay = QVBoxLayout(card)
         lay.setContentsMargins(16, 12, 16, 14)
         lay.setSpacing(4)
@@ -70,7 +70,7 @@ class SettingsTab(QWidget):
         lbl.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
         tag_lbl = QLabel(f"  [{tag}]")
         tag_lbl.setFont(QFont("Segoe UI", 10))
-        tag_lbl.setStyleSheet("color:#89b4fa;")
+        tag_lbl.setStyleSheet("color:#1971c2;")
         hdr_row.addWidget(lbl)
         hdr_row.addWidget(tag_lbl)
         hdr_row.addStretch()
@@ -78,7 +78,7 @@ class SettingsTab(QWidget):
 
         desc = QLabel(description)
         desc.setFont(QFont("Segoe UI", 10))
-        desc.setStyleSheet("color:#a6adc8;")
+        desc.setStyleSheet("color:#6c757d;")
         desc.setWordWrap(True)
         lay.addWidget(desc)
 
@@ -107,4 +107,4 @@ class SettingsTab(QWidget):
             "completion_lock_minutes": self._lock_spin.value(),
         })
         self._status.setText("Saved.")
-        self._status.setStyleSheet("color:#a6e3a1;font-weight:bold;")
+        self._status.setStyleSheet("color:#2f9e44;font-weight:bold;")

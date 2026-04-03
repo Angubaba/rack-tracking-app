@@ -10,9 +10,9 @@ from utils import now_ist_display
 from active_racks_widget import ActiveRacksWidget
 
 STATUS_COLOR = {
-    "success": "#a6e3a1",
-    "warning": "#f9e2af",
-    "error":   "#f38ba8",
+    "success": "#2f9e44",
+    "warning": "#e67700",
+    "error":   "#c92a2a",
 }
 
 
@@ -48,8 +48,8 @@ class OKTab(QWidget):
         self.datetime_display.setFont(QFont("Segoe UI", 13))
         self.datetime_display.setMinimumHeight(40)
         self.datetime_display.setStyleSheet(
-            "QLineEdit{background-color:#181825;color:#89b4fa;"
-            "border:1px solid #45475a;border-radius:4px;padding:4px 8px;}"
+            "QLineEdit{background-color:#e7f5ff;color:#1864ab;"
+            "border:1px solid #a5d8ff;border-radius:4px;padding:4px 8px;}"
         )
         lay.addLayout(self._row("DATE/TIME:", self.datetime_display))
 
@@ -109,7 +109,7 @@ class OKTab(QWidget):
         self.scan_btn.setMinimumHeight(52)
         self.scan_btn.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
         self.scan_btn.setStyleSheet(
-            "background-color:#a6e3a1;color:#1e1e2e;border-radius:5px;"
+            "background-color:#2f9e44;color:#ffffff;border-radius:5px;"
         )
         self.scan_btn.clicked.connect(self._on_scan)
         row.addWidget(self.scan_btn)
@@ -143,7 +143,7 @@ class OKTab(QWidget):
         inspected_by = self.inspector_input.text().strip().upper()
 
         if not qty_text:
-            self.status_label.setStyleSheet("color:#f38ba8;font-weight:bold;")
+            self.status_label.setStyleSheet("color:#c92a2a;font-weight:bold;")
             self.status_label.setText("Quantity is required.")
             self.qty_input.setFocus()
             return

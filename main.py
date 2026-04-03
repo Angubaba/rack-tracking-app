@@ -12,112 +12,118 @@ from settings_tab import SettingsTab
 
 STYLESHEET = """
 QWidget {
-    background-color: #1e1e2e;
-    color: #cdd6f4;
+    background-color: #f8f9fa;
+    color: #212529;
     font-family: "Segoe UI", Arial, sans-serif;
 }
 
 QTabWidget::pane {
-    border: 1px solid #45475a;
-    background-color: #1e1e2e;
+    border: 1px solid #dee2e6;
+    background-color: #f8f9fa;
 }
 QTabBar::tab {
-    background-color: #313244;
-    color: #cdd6f4;
+    background-color: #e9ecef;
+    color: #495057;
     padding: 9px 28px;
     font-size: 13px;
     font-weight: bold;
-    border: 1px solid #45475a;
+    border: 1px solid #dee2e6;
     border-bottom: none;
     border-top-left-radius: 4px;
     border-top-right-radius: 4px;
 }
 QTabBar::tab:selected {
-    background-color: #89b4fa;
-    color: #1e1e2e;
+    background-color: #1971c2;
+    color: #ffffff;
 }
 QTabBar::tab:hover:!selected {
-    background-color: #45475a;
+    background-color: #dee2e6;
 }
 
 QLineEdit, QSpinBox {
-    background-color: #313244;
-    color: #cdd6f4;
-    border: 1px solid #45475a;
+    background-color: #ffffff;
+    color: #212529;
+    border: 1px solid #ced4da;
     border-radius: 4px;
     padding: 4px 8px;
-    selection-background-color: #585b70;
+    selection-background-color: #a5d8ff;
 }
 QLineEdit:focus, QSpinBox:focus {
-    border: 2px solid #89b4fa;
+    border: 2px solid #1971c2;
+}
+QLineEdit:read-only {
+    background-color: #e7f5ff;
+    color: #1864ab;
+    border-color: #a5d8ff;
 }
 
 QSpinBox::up-button, QSpinBox::down-button {
-    background-color: #45475a;
+    background-color: #e9ecef;
     border: none;
     width: 20px;
 }
 QSpinBox::up-button:hover, QSpinBox::down-button:hover {
-    background-color: #585b70;
+    background-color: #dee2e6;
 }
 
 QPushButton {
-    background-color: #313244;
-    color: #cdd6f4;
-    border: 1px solid #45475a;
+    background-color: #e9ecef;
+    color: #212529;
+    border: 1px solid #ced4da;
     border-radius: 5px;
     padding: 6px 16px;
 }
-QPushButton:hover   { background-color: #45475a; }
-QPushButton:pressed { background-color: #585b70; }
+QPushButton:hover   { background-color: #dee2e6; }
+QPushButton:pressed { background-color: #ced4da; }
 QPushButton:disabled {
-    background-color: #1e1e2e;
-    color: #585b70;
-    border-color: #313244;
+    background-color: #f8f9fa;
+    color: #adb5bd;
+    border-color: #e9ecef;
 }
 
 QTableWidget {
-    background-color: #181825;
-    color: #cdd6f4;
-    gridline-color: #313244;
-    border: 1px solid #45475a;
-    selection-background-color: #585b70;
-    alternate-background-color: #1e1e2e;
+    background-color: #ffffff;
+    color: #212529;
+    gridline-color: #dee2e6;
+    border: 1px solid #dee2e6;
+    selection-background-color: #a5d8ff;
+    alternate-background-color: #f8f9fa;
 }
 QTableWidget::item { padding: 4px 8px; }
 QHeaderView::section {
-    background-color: #313244;
-    color: #89b4fa;
+    background-color: #e9ecef;
+    color: #1971c2;
     padding: 6px;
     border: none;
-    border-right: 1px solid #45475a;
+    border-right: 1px solid #dee2e6;
+    border-bottom: 1px solid #dee2e6;
     font-weight: bold;
 }
 
 QScrollBar:vertical {
-    background-color: #313244;
+    background-color: #f1f3f5;
     width: 10px;
     margin: 0;
 }
 QScrollBar::handle:vertical {
-    background-color: #585b70;
+    background-color: #ced4da;
     border-radius: 5px;
     min-height: 20px;
 }
-QScrollBar::handle:vertical:hover { background-color: #6c7086; }
+QScrollBar::handle:vertical:hover { background-color: #adb5bd; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 
 QScrollBar:horizontal {
-    background-color: #313244;
+    background-color: #f1f3f5;
     height: 10px;
 }
 QScrollBar::handle:horizontal {
-    background-color: #585b70;
+    background-color: #ced4da;
     border-radius: 5px;
 }
 
-QMessageBox { background-color: #1e1e2e; }
-QMessageBox QLabel { color: #cdd6f4; }
+QMessageBox { background-color: #ffffff; }
+QMessageBox QLabel { color: #212529; }
 """
 
 

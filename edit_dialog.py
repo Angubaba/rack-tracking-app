@@ -73,7 +73,7 @@ class EditScanDialog(QDialog):
                 ro.setFont(QFont("Segoe UI", 12))
                 ro.setMinimumHeight(36)
                 ro.setStyleSheet(
-                    "QLineEdit{background-color:#181825;color:#6c7086;"
+                    "QLineEdit{background-color:#f1f3f5;color:#6c757d;"
                     "border:1px solid #313244;border-radius:4px;padding:4px 8px;}"
                 )
                 root.addWidget(self._field_row(f"{label}:", ro))
@@ -84,7 +84,7 @@ class EditScanDialog(QDialog):
             root.addWidget(self._field_row("TAKEN BY:", self._taken_input))
 
         self._error_label = QLabel("")
-        self._error_label.setStyleSheet("color:#f38ba8;")
+        self._error_label.setStyleSheet("color:#c92a2a;")
         self._error_label.setWordWrap(True)
         root.addWidget(self._error_label)
 
@@ -95,7 +95,7 @@ class EditScanDialog(QDialog):
         buttons.accepted.connect(self._on_save)
         buttons.rejected.connect(self.reject)
         buttons.button(QDialogButtonBox.StandardButton.Save).setStyleSheet(
-            "background-color:#a6e3a1;color:#1e1e2e;font-weight:bold;"
+            "background-color:#2f9e44;color:#ffffff;font-weight:bold;"
             "border-radius:4px;padding:6px 18px;"
         )
         root.addWidget(buttons)

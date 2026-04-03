@@ -36,7 +36,7 @@ class THVerifyDialog(QDialog):
 
         # Details card
         card = QFrame()
-        card.setStyleSheet("QFrame{background-color:#313244;border-radius:8px;}")
+        card.setStyleSheet("QFrame{background-color:#f1f3f5;border-radius:8px;border:1px solid #dee2e6;}")
         card_lay = QVBoxLayout(card)
         card_lay.setContentsMargins(14, 10, 14, 10)
         card_lay.setSpacing(6)
@@ -55,7 +55,7 @@ class THVerifyDialog(QDialog):
             lbl.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
             val = QLabel(value)
             val.setFont(QFont("Segoe UI", 11))
-            val.setStyleSheet("color:#cdd6f4;")
+            val.setStyleSheet("color:#212529;")
             row.addWidget(lbl)
             row.addWidget(val)
             row.addStretch()
@@ -78,7 +78,7 @@ class THVerifyDialog(QDialog):
         root.addLayout(taken_row)
 
         self._error_label = QLabel("")
-        self._error_label.setStyleSheet("color:#f38ba8;")
+        self._error_label.setStyleSheet("color:#c92a2a;")
         root.addWidget(self._error_label)
 
         # Buttons
@@ -95,7 +95,7 @@ class THVerifyDialog(QDialog):
         confirm_btn.setMinimumHeight(42)
         confirm_btn.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
         confirm_btn.setStyleSheet(
-            "background-color:#89b4fa;color:#1e1e2e;border-radius:5px;padding:0 16px;"
+            "background-color:#1971c2;color:#ffffff;border-radius:5px;padding:0 16px;"
         )
         confirm_btn.clicked.connect(self._on_confirm)
 

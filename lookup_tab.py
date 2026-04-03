@@ -51,7 +51,7 @@ class LookupTab(QWidget):
 
     def _build_filter_card(self) -> QFrame:
         card = QFrame()
-        card.setStyleSheet("QFrame{background-color:#313244;border-radius:8px;}")
+        card.setStyleSheet("QFrame{background-color:#f1f3f5;border-radius:8px;border:1px solid #dee2e6;}")
         lay = QVBoxLayout(card)
         lay.setContentsMargins(12, 10, 12, 10)
         lay.setSpacing(8)
@@ -100,7 +100,7 @@ class LookupTab(QWidget):
         all_btn = QPushButton("All Time")
         all_btn.setMinimumHeight(38)
         all_btn.setFont(QFont("Segoe UI", 11))
-        all_btn.setStyleSheet("background-color:#45475a;color:#cdd6f4;border-radius:4px;")
+        all_btn.setStyleSheet("background-color:#e9ecef;color:#212529;border-radius:4px;border:1px solid #ced4da;")
         all_btn.clicked.connect(lambda: (
             self.from_date.setDate(QDate(2000, 1, 1)),
             self.to_date.setDate(QDate.currentDate()),
@@ -110,7 +110,7 @@ class LookupTab(QWidget):
         search_btn.setMinimumHeight(38)
         search_btn.setMinimumWidth(110)
         search_btn.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
-        search_btn.setStyleSheet("background-color:#89b4fa;color:#1e1e2e;border-radius:5px;")
+        search_btn.setStyleSheet("background-color:#1971c2;color:#ffffff;border-radius:5px;")
         search_btn.clicked.connect(self._on_search)
 
         date_row.addWidget(self.from_date)
@@ -124,7 +124,7 @@ class LookupTab(QWidget):
 
     def _build_summary_card(self) -> QFrame:
         card = QFrame()
-        card.setStyleSheet("QFrame{background-color:#181825;border-radius:8px;}")
+        card.setStyleSheet("QFrame{background-color:#ffffff;border-radius:8px;border:1px solid #dee2e6;}")
         lay = QVBoxLayout(card)
         lay.setContentsMargins(12, 8, 12, 8)
         lay.setSpacing(3)
@@ -167,7 +167,7 @@ class LookupTab(QWidget):
         self.export_btn.setMinimumWidth(160)
         self.export_btn.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
         self.export_btn.setStyleSheet(
-            "background-color:#a6e3a1;color:#1e1e2e;border-radius:5px;"
+            "background-color:#2f9e44;color:#ffffff;border-radius:5px;"
         )
         self.export_btn.setEnabled(False)
         self.export_btn.clicked.connect(self._on_export)
@@ -188,7 +188,7 @@ class LookupTab(QWidget):
 
         if not results:
             self.summary_title.setText("No records found.")
-            self.summary_title.setStyleSheet("color:#f38ba8;")
+            self.summary_title.setStyleSheet("color:#c92a2a;")
             self.summary_detail.setText("")
             self.table.setRowCount(0)
             self.export_btn.setEnabled(False)
@@ -207,7 +207,7 @@ class LookupTab(QWidget):
             f"{ok_count} OK scan{'s' if ok_count != 1 else ''}  ·  "
             f"{th_count} sent to TH  ·  Total Qty in OK scans: {total_qty}"
         )
-        self.summary_title.setStyleSheet("color:#a6e3a1;")
+        self.summary_title.setStyleSheet("color:#2f9e44;")
 
         model_qty: dict[str, int] = {}
         for r in results:
@@ -246,7 +246,7 @@ class LookupTab(QWidget):
 
             edit_btn = QPushButton("Edit")
             edit_btn.setStyleSheet(
-                "background-color:#89b4fa;color:#1e1e2e;"
+                "background-color:#1971c2;color:#ffffff;"
                 "border-radius:3px;padding:3px 6px;font-size:11px;"
             )
             edit_btn.clicked.connect(
@@ -256,7 +256,7 @@ class LookupTab(QWidget):
 
             del_btn = QPushButton("Delete")
             del_btn.setStyleSheet(
-                "background-color:#f38ba8;color:#1e1e2e;"
+                "background-color:#c92a2a;color:#ffffff;"
                 "border-radius:3px;padding:3px 6px;font-size:11px;"
             )
             del_btn.clicked.connect(
