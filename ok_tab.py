@@ -5,7 +5,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont, QIntValidator
 
-from logic import perform_ok_scan
+from logic import validate_ok_scan, perform_ok_scan
+from pcb_dialog import PCBSamplingDialog
 from utils import now_ist_display
 from active_racks_widget import ActiveRacksWidget
 
@@ -149,8 +150,24 @@ class OKTab(QWidget):
             return
         quantity = int(qty_text)
 
-        result = perform_ok_scan(rack_number, model, quantity, inspected_by)
-        color = STATUS_COLOR.get(result.status, "#cdd6f4")
+        # 1. Validate first — no DB write yet
+        check = validate_ok_scan(rack_number, model, quantity, inspected_by)
+        if not check.success:
+            color = STATUS_COLOR.get(check.status, "#212529")
+            self.status_label.setStyleSheet(f"color:{color};font-weight:bold;")
+            self.status_label.setText(check.message)
+            self.rack_input.setFocus()
+            return
+
+        # 2. PCB sampling dialog
+        dlg = PCBSamplingDialog(rack_number, self)
+        if dlg.exec() != PCBSamplingDialog.DialogCode.Accepted:
+            self.rack_input.setFocus()
+            return
+
+        # 3. Commit scan + PCB samples together
+        result = perform_ok_scan(rack_number, model, quantity, inspected_by, dlg.pcb_ids)
+        color = STATUS_COLOR.get(result.status, "#212529")
         self.status_label.setStyleSheet(f"color:{color};font-weight:bold;")
         self.status_label.setText(result.message)
 

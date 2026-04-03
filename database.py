@@ -49,9 +49,17 @@ def init_db() -> None:
                 created_at    TEXT    NOT NULL
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS pcb_samples (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                ok_scan_id  INTEGER NOT NULL REFERENCES ok_scans(id),
+                pcb_id      TEXT    NOT NULL
+            )
+        """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ok_rack    ON ok_scans(rack_number)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ok_time    ON ok_scans(created_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_th_ok_id   ON th_scans(ok_scan_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pcb_ok_id  ON pcb_samples(ok_scan_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_th_rack    ON th_scans(rack_number)")
         conn.commit()
 
@@ -192,3 +200,22 @@ def search_events(
     """
     with _connect() as conn:
         return conn.execute(sql, params() + params()).fetchall()
+
+
+# ── PCB samples ───────────────────────────────────────────────────────────────
+
+def insert_pcb_samples(ok_scan_id: int, pcb_ids: list) -> None:
+    with _connect() as conn:
+        conn.executemany(
+            "INSERT INTO pcb_samples (ok_scan_id, pcb_id) VALUES (?, ?)",
+            [(ok_scan_id, pid) for pid in pcb_ids],
+        )
+        conn.commit()
+
+
+def get_pcb_samples(ok_scan_id: int) -> list:
+    with _connect() as conn:
+        return conn.execute(
+            "SELECT pcb_id FROM pcb_samples WHERE ok_scan_id = ? ORDER BY id ASC",
+            (ok_scan_id,),
+        ).fetchall()

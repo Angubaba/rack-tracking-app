@@ -16,7 +16,7 @@ from edit_dialog import EditScanDialog
 IST_OFFSET = timedelta(hours=5, minutes=30)
 
 HEADERS = ["Sr.No.", "Type", "Rack No.", "Model", "Qty",
-           "Inspected By", "Taken By", "Date/Time (IST)", "", ""]
+           "Inspected By", "Taken By", "PCB Samples", "Date/Time (IST)", "", ""]
 
 TYPE_COLORS = {
     "OK": "#a6e3a1",
@@ -219,6 +219,13 @@ class LookupTab(QWidget):
     def _populate_table(self, results: list):
         self.table.setRowCount(len(results))
         for row, ev in enumerate(results):
+            # PCB samples only exist for OK scans
+            if ev["event_type"] == "OK":
+                pcbs = database.get_pcb_samples(ev["id"])
+                pcb_text = ", ".join(r["pcb_id"] for r in pcbs) if pcbs else "—"
+            else:
+                pcb_text = "—"
+
             values = [
                 str(row + 1),
                 ev["event_type"],
@@ -227,21 +234,21 @@ class LookupTab(QWidget):
                 str(ev["quantity"]),
                 ev["inspected_by"],
                 ev["taken_by"] or "—",
+                pcb_text,
                 to_ist(ev["created_at"]),
             ]
             for col, text in enumerate(values):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                # Colour the Type cell
                 if col == 1:
                     item.setForeground(
                         __import__("PyQt6.QtGui", fromlist=["QColor"]).QColor(
-                            TYPE_COLORS.get(ev["event_type"], "#cdd6f4")
+                            TYPE_COLORS.get(ev["event_type"], "#212529")
                         )
                     )
                 self.table.setItem(row, col, item)
 
-            scan_type = ev["event_type"].lower()   # 'ok' or 'th'
+            scan_type = ev["event_type"].lower()
             scan_id   = ev["id"]
 
             edit_btn = QPushButton("Edit")
@@ -252,7 +259,7 @@ class LookupTab(QWidget):
             edit_btn.clicked.connect(
                 lambda _c, st=scan_type, sid=scan_id: self._edit(st, sid)
             )
-            self.table.setCellWidget(row, 8, edit_btn)
+            self.table.setCellWidget(row, 9, edit_btn)
 
             del_btn = QPushButton("Delete")
             del_btn.setStyleSheet(
@@ -263,7 +270,7 @@ class LookupTab(QWidget):
                 lambda _c, st=scan_type, sid=scan_id,
                        rack=ev["rack_number"]: self._delete(st, sid, rack)
             )
-            self.table.setCellWidget(row, 9, del_btn)
+            self.table.setCellWidget(row, 10, del_btn)
 
     # ── edit / delete ────────────────────────────────────────────────────────
 
@@ -346,7 +353,7 @@ class LookupTab(QWidget):
         ws.title = "All Events"
 
         headers = ["Sr. No.", "Type", "Rack Number", "Model", "Quantity",
-                   "Inspected By", "Taken By", "Date/Time (IST)"]
+                   "Inspected By", "Taken By", "PCB Samples", "Date/Time (IST)"]
         ws.append(headers)
         for col in range(1, len(headers) + 1):
             c = ws.cell(1, col)
@@ -355,6 +362,11 @@ class LookupTab(QWidget):
         ws.row_dimensions[1].height = 22
 
         for i, ev in enumerate(self._results, 1):
+            if ev["event_type"] == "OK":
+                pcbs = database.get_pcb_samples(ev["id"])
+                pcb_text = ", ".join(r["pcb_id"] for r in pcbs) if pcbs else ""
+            else:
+                pcb_text = ""
             row_data = [
                 i,
                 ev["event_type"],
@@ -363,6 +375,7 @@ class LookupTab(QWidget):
                 ev["quantity"],
                 ev["inspected_by"],
                 ev["taken_by"] or "",
+                pcb_text,
                 to_ist(ev["created_at"]),
             ]
             ws.append(row_data)
