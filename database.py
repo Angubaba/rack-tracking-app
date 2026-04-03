@@ -94,10 +94,11 @@ def get_ok_scans_for_rack(rack_number: str) -> list:
 
 
 def delete_ok_scan(scan_id: int) -> None:
-    """Deletes the OK scan and any linked TH scan."""
+    """Deletes the OK scan and all linked TH scan + PCB samples."""
     with _connect() as conn:
-        conn.execute("DELETE FROM th_scans WHERE ok_scan_id = ?", (scan_id,))
-        conn.execute("DELETE FROM ok_scans WHERE id = ?", (scan_id,))
+        conn.execute("DELETE FROM pcb_samples WHERE ok_scan_id = ?", (scan_id,))
+        conn.execute("DELETE FROM th_scans   WHERE ok_scan_id = ?", (scan_id,))
+        conn.execute("DELETE FROM ok_scans   WHERE id = ?",         (scan_id,))
         conn.commit()
 
 
