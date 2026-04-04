@@ -1,14 +1,14 @@
 from datetime import datetime, timezone, timedelta, date
 from pathlib import Path
 
-from PyQt6.QtWidgets import (
+from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QTableWidget, QTableWidgetItem,
     QMessageBox, QFrame, QHeaderView, QDateEdit, QFileDialog,
-    QDialog, QListWidget, QListWidgetItem,
+    QDialog, QListWidget, QListWidgetItem, QAbstractItemView,
 )
-from PyQt6.QtCore import Qt, QDate
-from PyQt6.QtGui import QFont
+from PyQt5.QtCore import Qt, QDate
+from PyQt5.QtGui import QFont, QColor
 
 import database
 from utils import to_ist
@@ -28,7 +28,7 @@ def _show_pcb_popup(pcb_ids: list, parent=None):
     lay.setSpacing(8)
 
     title = QLabel(f"{len(pcb_ids)} PCB(s) sampled:")
-    title.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+    title.setFont(QFont("Segoe UI", 11, QFont.Bold))
     lay.addWidget(title)
 
     lst = QListWidget()
@@ -43,7 +43,7 @@ def _show_pcb_popup(pcb_ids: list, parent=None):
     close_btn.clicked.connect(dlg.accept)
     lay.addWidget(close_btn)
 
-    dlg.exec()
+    dlg.exec_()
 
 
 HEADERS = ["Sr.No.", "Type", "Rack No.", "Model", "Qty",
@@ -90,7 +90,7 @@ class LookupTab(QWidget):
         # Rack number (optional)
         rack_row = QHBoxLayout()
         lbl = QLabel("RACK NUMBER:")
-        lbl.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        lbl.setFont(QFont("Segoe UI", 11, QFont.Bold))
         lbl.setFixedWidth(130)
         rack_row.addWidget(lbl)
         self.search_input = QLineEdit()
@@ -105,7 +105,7 @@ class LookupTab(QWidget):
         date_row = QHBoxLayout()
         date_row.setSpacing(10)
         date_lbl = QLabel("DATE RANGE:")
-        date_lbl.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        date_lbl.setFont(QFont("Segoe UI", 11, QFont.Bold))
         date_lbl.setFixedWidth(130)
         date_row.addWidget(date_lbl)
 
@@ -119,7 +119,7 @@ class LookupTab(QWidget):
 
         to_lbl = QLabel("to")
         to_lbl.setFont(QFont("Segoe UI", 11))
-        to_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        to_lbl.setAlignment(Qt.AlignCenter)
 
         self.to_date = QDateEdit()
         self.to_date.setCalendarPopup(True)
@@ -140,7 +140,7 @@ class LookupTab(QWidget):
         search_btn = QPushButton("SEARCH")
         search_btn.setMinimumHeight(38)
         search_btn.setMinimumWidth(110)
-        search_btn.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        search_btn.setFont(QFont("Segoe UI", 12, QFont.Bold))
         search_btn.setStyleSheet("background-color:#1971c2;color:#ffffff;border-radius:5px;")
         search_btn.clicked.connect(self._on_search)
 
@@ -160,7 +160,7 @@ class LookupTab(QWidget):
         lay.setContentsMargins(12, 8, 12, 8)
         lay.setSpacing(3)
         self.summary_title = QLabel("No search run yet.")
-        self.summary_title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        self.summary_title.setFont(QFont("Segoe UI", 13, QFont.Bold))
         self.summary_detail = QLabel("")
         self.summary_detail.setFont(QFont("Segoe UI", 11))
         self.summary_detail.setWordWrap(True)
@@ -178,13 +178,13 @@ class LookupTab(QWidget):
         self.table.setColumnCount(len(HEADERS))
         self.table.setHorizontalHeaderLabels(HEADERS)
         hh = self.table.horizontalHeader()
-        hh.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        hh.setSectionResizeMode(QHeaderView.Stretch)
         # Fixed-width columns: Sr.No, Type, Qty, PCB Samples, Date/Time, Edit, Delete
         for col, width in {0: 55, 1: 55, 4: 60, 7: 110, 8: 155, 9: 65, 10: 70}.items():
-            hh.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
+            hh.setSectionResizeMode(col, QHeaderView.Fixed)
             self.table.setColumnWidth(col, width)
-        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(False)
@@ -198,7 +198,7 @@ class LookupTab(QWidget):
         self.export_btn = QPushButton("Export to Excel")
         self.export_btn.setMinimumHeight(42)
         self.export_btn.setMinimumWidth(160)
-        self.export_btn.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        self.export_btn.setFont(QFont("Segoe UI", 12, QFont.Bold))
         self.export_btn.setStyleSheet(
             "background-color:#2f9e44;color:#ffffff;border-radius:5px;"
         )
@@ -274,16 +274,14 @@ class LookupTab(QWidget):
             ]
             for col, text in enumerate(values):
                 item = QTableWidgetItem(text)
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                item.setTextAlignment(Qt.AlignCenter)
                 if col == 1:
                     item.setForeground(
-                        __import__("PyQt6.QtGui", fromlist=["QColor"]).QColor(
-                            TYPE_COLORS.get(ev["event_type"], "#212529")
-                        )
+                        QColor(TYPE_COLORS.get(ev["event_type"], "#212529"))
                     )
                 # Store PCB IDs on the PCB cell for double-click retrieval
                 if col == 7:
-                    item.setData(Qt.ItemDataRole.UserRole, pcb_ids)
+                    item.setData(Qt.UserRole, pcb_ids)
                     if pcb_ids:
                         item.setToolTip("Double-click to view PCB IDs")
                 self.table.setItem(row, col, item)
@@ -320,7 +318,7 @@ class LookupTab(QWidget):
         item = self.table.item(row, col)
         if not item:
             return
-        pcb_ids = item.data(Qt.ItemDataRole.UserRole) or []
+        pcb_ids = item.data(Qt.UserRole) or []
         if not pcb_ids:
             return
         _show_pcb_popup(pcb_ids, self)
@@ -332,7 +330,7 @@ class LookupTab(QWidget):
             dlg = EditScanDialog(scan_type, scan_id, self)
         except ValueError:
             return
-        if dlg.exec():
+        if dlg.exec_():
             self._on_search()
 
     def _delete(self, scan_type: str, scan_id: int, rack_number: str):
@@ -353,10 +351,10 @@ class LookupTab(QWidget):
 
         reply = QMessageBox.question(
             self, "Delete Record", msg,
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
         )
-        if reply != QMessageBox.StandardButton.Yes:
+        if reply != QMessageBox.Yes:
             return
 
         if scan_type == "ok":

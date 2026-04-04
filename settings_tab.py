@@ -1,9 +1,9 @@
-from PyQt6.QtWidgets import (
+from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox,
     QPushButton, QFrame,
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFont
 
 import settings
 
@@ -18,10 +18,10 @@ class SettingsTab(QWidget):
         root = QVBoxLayout(self)
         root.setSpacing(16)
         root.setContentsMargins(24, 20, 24, 20)
-        root.setAlignment(Qt.AlignmentFlag.AlignTop)
+        root.setAlignment(Qt.AlignTop)
 
         title = QLabel("Settings")
-        title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
+        title.setFont(QFont("Segoe UI", 15, QFont.Bold))
         root.addWidget(title)
 
         root.addWidget(self._build_card(
@@ -43,7 +43,7 @@ class SettingsTab(QWidget):
         save_btn = QPushButton("Save Settings")
         save_btn.setMinimumHeight(46)
         save_btn.setMinimumWidth(160)
-        save_btn.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        save_btn.setFont(QFont("Segoe UI", 12, QFont.Bold))
         save_btn.setStyleSheet(
             "background-color:#2f9e44;color:#ffffff;border-radius:5px;"
         )
@@ -67,7 +67,7 @@ class SettingsTab(QWidget):
 
         hdr_row = QHBoxLayout()
         lbl = QLabel(title)
-        lbl.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        lbl.setFont(QFont("Segoe UI", 12, QFont.Bold))
         tag_lbl = QLabel(f"  [{tag}]")
         tag_lbl.setFont(QFont("Segoe UI", 10))
         tag_lbl.setStyleSheet("color:#1971c2;")

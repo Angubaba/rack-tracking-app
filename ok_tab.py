@@ -1,9 +1,9 @@
-from PyQt6.QtWidgets import (
+from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QFrame,
 )
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont, QIntValidator
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QFont, QIntValidator
 
 from logic import validate_ok_scan, perform_ok_scan
 from pcb_dialog import PCBSamplingDialog
@@ -99,7 +99,7 @@ class OKTab(QWidget):
         row = QHBoxLayout()
         lbl = QLabel(label_text)
         lbl.setFixedWidth(130)
-        lbl.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        lbl.setFont(QFont("Segoe UI", 11, QFont.Bold))
         row.addWidget(lbl)
         row.addWidget(widget, 1 if stretch else 0)
         return row
@@ -108,7 +108,7 @@ class OKTab(QWidget):
         row = QHBoxLayout()
         self.scan_btn = QPushButton("MARK OK  →  ADD TO FG")
         self.scan_btn.setMinimumHeight(52)
-        self.scan_btn.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        self.scan_btn.setFont(QFont("Segoe UI", 13, QFont.Bold))
         self.scan_btn.setStyleSheet(
             "background-color:#2f9e44;color:#ffffff;border-radius:5px;"
         )
@@ -120,7 +120,7 @@ class OKTab(QWidget):
         self.status_label = QLabel("")
         self.status_label.setFont(QFont("Segoe UI", 12))
         self.status_label.setMinimumHeight(32)
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_label.setAlignment(Qt.AlignCenter)
         self.status_label.setWordWrap(True)
         return self.status_label
 
@@ -161,7 +161,7 @@ class OKTab(QWidget):
 
         # 2. PCB sampling dialog
         dlg = PCBSamplingDialog(rack_number, self)
-        if dlg.exec() != PCBSamplingDialog.DialogCode.Accepted:
+        if dlg.exec_() != PCBSamplingDialog.Accepted:
             self.rack_input.setFocus()
             return
 

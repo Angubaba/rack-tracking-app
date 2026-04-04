@@ -1,8 +1,9 @@
-from PyQt6.QtWidgets import (
+from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QTableWidget, QTableWidgetItem, QHeaderView,
+    QAbstractItemView,
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFont
 
 import database
 from utils import to_ist
@@ -24,19 +25,19 @@ class ActiveRacksWidget(QWidget):
         lay.setSpacing(4)
 
         hdr = QLabel("Active Racks in FG")
-        hdr.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        hdr.setFont(QFont("Segoe UI", 11, QFont.Bold))
         lay.addWidget(hdr)
 
         self._table = QTableWidget()
         self._table.setColumnCount(len(HEADERS))
         self._table.setHorizontalHeaderLabels(HEADERS)
         hh = self._table.horizontalHeader()
-        hh.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        hh.setSectionResizeMode(QHeaderView.Stretch)
         for col, width in {2: 60, _PCB_COL: 110}.items():
-            hh.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
+            hh.setSectionResizeMode(col, QHeaderView.Fixed)
             self._table.setColumnWidth(col, width)
-        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._table.setAlternatingRowColors(True)
         self._table.verticalHeader().setVisible(False)
         self._table.setShowGrid(False)
@@ -61,9 +62,9 @@ class ActiveRacksWidget(QWidget):
             ]
             for col, text in enumerate(values):
                 item = QTableWidgetItem(text)
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                item.setTextAlignment(Qt.AlignCenter)
                 if col == _PCB_COL:
-                    item.setData(Qt.ItemDataRole.UserRole, pcb_ids)
+                    item.setData(Qt.UserRole, pcb_ids)
                     if pcb_ids:
                         item.setToolTip("Double-click to view PCB IDs")
                 self._table.setItem(row, col, item)
@@ -74,7 +75,7 @@ class ActiveRacksWidget(QWidget):
         item = self._table.item(row, col)
         if not item:
             return
-        pcb_ids = item.data(Qt.ItemDataRole.UserRole) or []
+        pcb_ids = item.data(Qt.UserRole) or []
         if not pcb_ids:
             return
         # Import here to avoid circular imports

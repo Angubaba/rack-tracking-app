@@ -1,10 +1,10 @@
 """Verification popup shown before recording a TH scan."""
-from PyQt6.QtWidgets import (
+from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QFrame,
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFont
 
 from utils import to_ist
 
@@ -31,7 +31,7 @@ class THVerifyDialog(QDialog):
 
         # Title
         title = QLabel("Confirm Rack Details")
-        title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        title.setFont(QFont("Segoe UI", 14, QFont.Bold))
         root.addWidget(title)
 
         # Details card
@@ -52,7 +52,7 @@ class THVerifyDialog(QDialog):
             row = QHBoxLayout()
             lbl = QLabel(f"{label}:")
             lbl.setFixedWidth(120)
-            lbl.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+            lbl.setFont(QFont("Segoe UI", 11, QFont.Bold))
             val = QLabel(value)
             val.setFont(QFont("Segoe UI", 11))
             val.setStyleSheet("color:#212529;")
@@ -67,7 +67,7 @@ class THVerifyDialog(QDialog):
         taken_row = QHBoxLayout()
         taken_lbl = QLabel("TAKEN BY:")
         taken_lbl.setFixedWidth(120)
-        taken_lbl.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        taken_lbl.setFont(QFont("Segoe UI", 11, QFont.Bold))
         self.taken_input = QLineEdit()
         self.taken_input.setPlaceholderText("Name of person taking the rack…")
         self.taken_input.setFont(QFont("Segoe UI", 13))
@@ -93,7 +93,7 @@ class THVerifyDialog(QDialog):
 
         confirm_btn = QPushButton("Confirm — Send to TH")
         confirm_btn.setMinimumHeight(42)
-        confirm_btn.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        confirm_btn.setFont(QFont("Segoe UI", 12, QFont.Bold))
         confirm_btn.setStyleSheet(
             "background-color:#1971c2;color:#ffffff;border-radius:5px;padding:0 16px;"
         )

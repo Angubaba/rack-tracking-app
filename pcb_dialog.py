@@ -1,10 +1,10 @@
 """Dialog for scanning PCB sample IDs before adding a rack to FG."""
-from PyQt6.QtWidgets import (
+from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QListWidget, QListWidgetItem, QFrame,
+    QPushButton, QListWidget, QListWidgetItem, QFrame, QAbstractItemView,
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFont
 
 import database
 
@@ -36,7 +36,7 @@ class PCBSamplingDialog(QDialog):
 
         # Header
         title = QLabel("Enter PCB Sample IDs")
-        title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        title.setFont(QFont("Segoe UI", 14, QFont.Bold))
         root.addWidget(title)
 
         rack_lbl = QLabel(f"Rack: {self._rack_number}")
@@ -55,7 +55,7 @@ class PCBSamplingDialog(QDialog):
         add_btn = QPushButton("Add")
         add_btn.setMinimumHeight(42)
         add_btn.setMinimumWidth(70)
-        add_btn.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        add_btn.setFont(QFont("Segoe UI", 11, QFont.Bold))
         add_btn.setStyleSheet(
             "background-color:#1971c2;color:#ffffff;border-radius:4px;"
         )
@@ -78,7 +78,7 @@ class PCBSamplingDialog(QDialog):
         self._list = QListWidget()
         self._list.setFont(QFont("Segoe UI", 12))
         self._list.setAlternatingRowColors(True)
-        self._list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
+        self._list.setSelectionMode(QAbstractItemView.ExtendedSelection)
         root.addWidget(self._list)
 
         remove_btn = QPushButton("Remove Selected")
@@ -100,7 +100,7 @@ class PCBSamplingDialog(QDialog):
 
         confirm_btn = QPushButton("Confirm & Add to FG")
         confirm_btn.setMinimumHeight(42)
-        confirm_btn.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        confirm_btn.setFont(QFont("Segoe UI", 12, QFont.Bold))
         confirm_btn.setStyleSheet(
             "background-color:#2f9e44;color:#ffffff;border-radius:5px;padding:0 16px;"
         )

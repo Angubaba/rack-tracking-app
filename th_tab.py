@@ -1,9 +1,9 @@
-from PyQt6.QtWidgets import (
+from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QFrame,
 )
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QFont
 
 import database
 from logic import check_th_completion_lock
@@ -65,7 +65,7 @@ class THTab(QWidget):
 
         send_btn = QPushButton("SEND TO TH")
         send_btn.setMinimumHeight(52)
-        send_btn.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        send_btn.setFont(QFont("Segoe UI", 13, QFont.Bold))
         send_btn.setStyleSheet(
             "background-color:#1971c2;color:#ffffff;border-radius:5px;"
         )
@@ -79,7 +79,7 @@ class THTab(QWidget):
         row = QHBoxLayout()
         lbl = QLabel(label_text)
         lbl.setFixedWidth(130)
-        lbl.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        lbl.setFont(QFont("Segoe UI", 11, QFont.Bold))
         row.addWidget(lbl)
         row.addWidget(widget, 1 if stretch else 0)
         return row
@@ -88,7 +88,7 @@ class THTab(QWidget):
         self.status_label = QLabel("")
         self.status_label.setFont(QFont("Segoe UI", 12))
         self.status_label.setMinimumHeight(32)
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_label.setAlignment(Qt.AlignCenter)
         self.status_label.setWordWrap(True)
         return self.status_label
 
@@ -123,19 +123,19 @@ class THTab(QWidget):
         # ── completion lock (TH tab only, independent of OK duplicate lock) ──
         lock = check_th_completion_lock(rack_number)
         if lock:
-            from PyQt6.QtWidgets import QMessageBox
+            from PyQt5.QtWidgets import QMessageBox
             reply = QMessageBox.question(
                 self, "Recent TH Lock", lock.message,
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
             )
-            if reply != QMessageBox.StandardButton.Yes:
+            if reply != QMessageBox.Yes:
                 self.rack_input.setFocus()
                 return
 
         # Show verification dialog
         dlg = THVerifyDialog(ok_scan, self)
-        if dlg.exec():
+        if dlg.exec_():
             database.insert_th_scan(
                 ok_scan_id   = ok_scan["id"],
                 rack_number  = ok_scan["rack_number"],

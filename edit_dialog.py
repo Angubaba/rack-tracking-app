@@ -1,10 +1,10 @@
 """Edit dialog for OK scans and TH scans."""
-from PyQt6.QtWidgets import (
+from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QSpinBox, QPushButton, QDialogButtonBox, QWidget,
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFont
 
 import database
 from utils import validate_rack_number
@@ -106,7 +106,7 @@ class EditScanDialog(QDialog):
         lay.setContentsMargins(0, 0, 0, 0)
         lbl = QLabel(label)
         lbl.setFixedWidth(130)
-        lbl.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        lbl.setFont(QFont("Segoe UI", 11, QFont.Bold))
         lay.addWidget(lbl)
         lay.addWidget(widget, 1)
         return container

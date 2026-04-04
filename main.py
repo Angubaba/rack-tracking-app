@@ -1,8 +1,8 @@
 """QC Rack Tracking System — PyQt6 desktop application entry point."""
 import sys
 
-from PyQt6.QtWidgets import QApplication, QMainWindow, QTabWidget
-from PyQt6.QtGui import QFont
+from PyQt5.QtWidgets import QApplication, QMainWindow, QTabWidget
+from PyQt5.QtGui import QFont
 
 import database
 from ok_tab import OKTab
@@ -168,7 +168,7 @@ def main():
 
     window = MainWindow()
     window.show()
-    sys.exit(app.exec())
+    sys.exit(app.exec_())
 
 
 if __name__ == "__main__":
