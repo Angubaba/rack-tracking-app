@@ -75,7 +75,7 @@ def perform_ok_scan(
     model: str,
     quantity: int,
     inspected_by: str,
-    pcb_ids: list | None = None,
+    pcb_ids: Optional[list] = None,
 ) -> ScanResult:
     """Validate, insert OK scan, and optionally insert PCB samples."""
     result = validate_ok_scan(rack_number, model, quantity, inspected_by)
@@ -89,7 +89,7 @@ def perform_ok_scan(
     return ScanResult(True, f"Rack {rack_number} added to FG.", "success", scan_id)
 
 
-def check_th_completion_lock(rack_number: str) -> ScanResult | None:
+def check_th_completion_lock(rack_number: str) -> Optional[ScanResult]:
     """
     TH tab only — checks if this rack was sent to TH recently.
     Returns a confirm_required ScanResult if locked, None if clear.

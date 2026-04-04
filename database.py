@@ -2,6 +2,7 @@ import sys
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 
 def get_db_path() -> Path:
@@ -170,9 +171,9 @@ def get_active_rack(rack_number: str):
 # ── Merged sequential events ─────────────────────────────────────────────────
 
 def search_events(
-    rack_number: str | None,
-    utc_from: str | None,
-    utc_to: str | None,
+    rack_number: Optional[str],
+    utc_from: Optional[str],
+    utc_to: Optional[str],
 ) -> list:
     """Merged OK + TH events, newest-first, with optional filters."""
     rack_clause = "AND rack_number = ?" if rack_number else ""

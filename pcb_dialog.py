@@ -20,7 +20,7 @@ class PCBSamplingDialog(QDialog):
     def __init__(self, rack_number: str, parent=None):
         super().__init__(parent)
         self._rack_number = rack_number
-        self.pcb_ids: list[str] = []
+        self.pcb_ids = []
         # Pre-load all PCBs ever recorded for this rack
         self._historic: set[str] = database.get_all_pcb_ids_for_rack(rack_number)
         self.setWindowTitle("Sample PCB IDs")
