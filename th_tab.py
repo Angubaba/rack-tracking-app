@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QFrame,
+    QPushButton, QFrame, QMessageBox,
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont
@@ -21,6 +21,7 @@ STATUS_COLOR = {
 class THTab(QWidget):
     def __init__(self):
         super().__init__()
+        self._last_th_scan_id = None
         self._setup_ui()
         self._start_clock()
 
@@ -63,6 +64,8 @@ class THTab(QWidget):
         self.rack_input.textChanged.connect(self._force_upper)
         lay.addLayout(self._row("RACK NUMBER:", self.rack_input))
 
+        btn_row = QHBoxLayout()
+
         send_btn = QPushButton("SEND TO TH")
         send_btn.setMinimumHeight(52)
         send_btn.setFont(QFont("Segoe UI", 13, QFont.Bold))
@@ -70,7 +73,19 @@ class THTab(QWidget):
             "background-color:#1971c2;color:#ffffff;border-radius:5px;"
         )
         send_btn.clicked.connect(self._on_scan)
-        lay.addWidget(send_btn)
+        btn_row.addWidget(send_btn)
+
+        self.undo_btn = QPushButton("Undo Last Scan")
+        self.undo_btn.setMinimumHeight(52)
+        self.undo_btn.setFont(QFont("Segoe UI", 11))
+        self.undo_btn.setStyleSheet(
+            "background-color:#e9ecef;color:#495057;border-radius:5px;border:1px solid #ced4da;"
+        )
+        self.undo_btn.setEnabled(False)
+        self.undo_btn.clicked.connect(self._on_undo)
+        btn_row.addWidget(self.undo_btn)
+
+        lay.addLayout(btn_row)
 
         return frame
 
@@ -136,7 +151,7 @@ class THTab(QWidget):
         # Show verification dialog
         dlg = THVerifyDialog(ok_scan, self)
         if dlg.exec_():
-            database.insert_th_scan(
+            th_id = database.insert_th_scan(
                 ok_scan_id   = ok_scan["id"],
                 rack_number  = ok_scan["rack_number"],
                 model        = ok_scan["model"],
@@ -144,6 +159,8 @@ class THTab(QWidget):
                 inspected_by = ok_scan["inspected_by"],
                 taken_by     = dlg.taken_by,
             )
+            self._last_th_scan_id = th_id
+            self.undo_btn.setEnabled(True)
             self._set_status(
                 f"Rack {rack_number} sent to TH. Taken by: {dlg.taken_by}",
                 "success",
@@ -152,6 +169,22 @@ class THTab(QWidget):
             self._active.refresh()
 
         self.rack_input.setFocus()
+
+    def _on_undo(self):
+        if self._last_th_scan_id is None:
+            return
+        reply = QMessageBox.question(
+            self, "Undo Last Scan",
+            "Remove the last TH scan? The rack will return to active racks.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        database.delete_th_scan(self._last_th_scan_id)
+        self._last_th_scan_id = None
+        self.undo_btn.setEnabled(False)
+        self._set_status("Last TH scan undone. Rack is active again.", "warning")
+        self._active.refresh()
 
     def _set_status(self, message: str, status: str):
         color = STATUS_COLOR.get(status, "#cdd6f4")

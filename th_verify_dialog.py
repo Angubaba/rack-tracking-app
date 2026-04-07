@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 
+import database
 from utils import to_ist
 
 
@@ -41,11 +42,13 @@ class THVerifyDialog(QDialog):
         card_lay.setContentsMargins(14, 10, 14, 10)
         card_lay.setSpacing(6)
 
+        pcb_count = len(database.get_pcb_samples(self._ok_scan["id"]))
         fields = [
             ("Rack Number",  self._ok_scan["rack_number"]),
             ("Model",        self._ok_scan["model"]),
             ("Quantity",     str(self._ok_scan["quantity"])),
             ("Inspected By", self._ok_scan["inspected_by"]),
+            ("PCBs Sampled", str(pcb_count)),
             ("In FG Since",  to_ist(self._ok_scan["created_at"])),
         ]
         for label, value in fields:

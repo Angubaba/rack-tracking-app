@@ -55,7 +55,7 @@ TYPE_COLORS = {
 }
 
 
-def _ist_date_to_utc_range(d: date) -> tuple[str, str]:
+def _ist_date_to_utc_range(d: date) -> tuple:
     ist_start = datetime(d.year, d.month, d.day, tzinfo=timezone(IST_OFFSET))
     ist_end   = ist_start + timedelta(days=1) - timedelta(seconds=1)
     return (ist_start.astimezone(timezone.utc).isoformat(),
@@ -358,7 +358,7 @@ class LookupTab(QWidget):
             return
 
         if scan_type == "ok":
-            database.delete_ok_scan(scan_id)   # cascades to th_scan
+            database.delete_ok_scan(scan_id)
         else:
             database.delete_th_scan(scan_id)
 
@@ -441,9 +441,9 @@ class LookupTab(QWidget):
                 c.fill = fill; c.font = NORMAL_FONT
                 c.border = BORDER
                 # PCB Samples column (col 8) — wrap + auto row height
-                if col == 8 and pcb_ids:
+                if col == 8 and ev["event_type"] == "OK":
                     c.alignment = WRAP_CENTER
-                    ws.row_dimensions[i + 1].height = max(15 * len(pcb_ids), 20)
+                    ws.row_dimensions[i + 1].height = max(15 * len(pcb_ids), 150)
                 else:
                     c.alignment = CENTER
 

@@ -1,10 +1,11 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QFrame,
+    QPushButton, QFrame, QMessageBox,
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QIntValidator
 
+import database
 from logic import validate_ok_scan, perform_ok_scan
 from pcb_dialog import PCBSamplingDialog
 from utils import now_ist_display
@@ -20,6 +21,7 @@ STATUS_COLOR = {
 class OKTab(QWidget):
     def __init__(self):
         super().__init__()
+        self._last_scan_id = None
         self._setup_ui()
         self._start_clock()
 
@@ -114,6 +116,16 @@ class OKTab(QWidget):
         )
         self.scan_btn.clicked.connect(self._on_scan)
         row.addWidget(self.scan_btn)
+
+        self.undo_btn = QPushButton("Undo Last Scan")
+        self.undo_btn.setMinimumHeight(52)
+        self.undo_btn.setFont(QFont("Segoe UI", 11))
+        self.undo_btn.setStyleSheet(
+            "background-color:#e9ecef;color:#495057;border-radius:5px;border:1px solid #ced4da;"
+        )
+        self.undo_btn.setEnabled(False)
+        self.undo_btn.clicked.connect(self._on_undo)
+        row.addWidget(self.undo_btn)
         return row
 
     def _build_status_label(self) -> QLabel:
@@ -172,6 +184,8 @@ class OKTab(QWidget):
         self.status_label.setText(result.message)
 
         if result.success:
+            self._last_scan_id = result.scan_id
+            self.undo_btn.setEnabled(True)
             self.rack_input.clear()
             self.model_input.clear()
             self.qty_input.clear()
@@ -179,6 +193,23 @@ class OKTab(QWidget):
             self._active.refresh()
 
         self.rack_input.setFocus()
+
+    def _on_undo(self):
+        if self._last_scan_id is None:
+            return
+        reply = QMessageBox.question(
+            self, "Undo Last Scan",
+            "Remove the last OK scan and its PCB samples?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        database.delete_ok_scan(self._last_scan_id)
+        self._last_scan_id = None
+        self.undo_btn.setEnabled(False)
+        self.status_label.setText("Last scan undone.")
+        self.status_label.setStyleSheet("color:#e67700;font-weight:bold;")
+        self._active.refresh()
 
     # ── called by MainWindow on tab switch ───────────────────────────────────
 

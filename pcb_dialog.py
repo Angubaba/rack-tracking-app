@@ -90,13 +90,12 @@ class PCBSamplingDialog(QDialog):
         root.addWidget(remove_btn)
 
         # Bottom buttons
+        self._error_label = QLabel("")
+        self._error_label.setStyleSheet("color:#c92a2a;font-size:11px;")
+        root.addWidget(self._error_label)
+
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-
-        skip_btn = QPushButton("Skip — No Samples")
-        skip_btn.setMinimumHeight(42)
-        skip_btn.setFont(QFont("Segoe UI", 11))
-        skip_btn.clicked.connect(self._skip)
 
         confirm_btn = QPushButton("Confirm & Add to FG")
         confirm_btn.setMinimumHeight(42)
@@ -104,9 +103,8 @@ class PCBSamplingDialog(QDialog):
         confirm_btn.setStyleSheet(
             "background-color:#2f9e44;color:#ffffff;border-radius:5px;padding:0 16px;"
         )
-        confirm_btn.clicked.connect(self.accept)
+        confirm_btn.clicked.connect(self._on_confirm)
 
-        btn_row.addWidget(skip_btn)
         btn_row.addWidget(confirm_btn)
         root.addLayout(btn_row)
 
@@ -141,6 +139,8 @@ class PCBSamplingDialog(QDialog):
             self._list.takeItem(self._list.row(item))
         self._count_label.setText(f"{len(self.pcb_ids)} PCB(s) sampled")
 
-    def _skip(self):
-        self.pcb_ids = []
+    def _on_confirm(self):
+        if not self.pcb_ids:
+            self._error_label.setText("At least one PCB ID must be sampled.")
+            return
         self.accept()
