@@ -33,7 +33,7 @@ class ActiveRacksWidget(QWidget):
         self._table.setHorizontalHeaderLabels(HEADERS)
         hh = self._table.horizontalHeader()
         hh.setSectionResizeMode(QHeaderView.Stretch)
-        for col, width in {2: 60, _PCB_COL: 110}.items():
+        for col, width in {2: 60, _PCB_COL: 140}.items():
             hh.setSectionResizeMode(col, QHeaderView.Fixed)
             self._table.setColumnWidth(col, width)
         self._table.setEditTriggers(QAbstractItemView.NoEditTriggers)
