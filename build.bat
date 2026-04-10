@@ -34,6 +34,13 @@ if %errorlevel% neq 0 (
 )
 
 echo.
+echo [3/3] Writing settings.json with current models into dist...
+py -3.7-32 -c "import settings, json, pathlib; pathlib.Path('dist/RackTracker/settings.json').write_text(json.dumps(settings.load(), indent=2))"
+if %errorlevel% neq 0 (
+    echo WARNING: Could not write settings.json to dist.
+)
+
+echo.
 echo ============================================================
 echo  Done!  Distributable folder: dist\RackTracker\
 echo  Run it with:  dist\RackTracker\RackTracker.exe
