@@ -1,532 +1,501 @@
-from datetime import datetime, timezone, timedelta, date
+"""Lookup tab — full cycle history with search, edit, delete, export."""
+import tkinter as tk
+from tkinter import ttk, filedialog
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QTableWidget, QTableWidgetItem,
-    QMessageBox, QFrame, QHeaderView, QDateEdit, QFileDialog,
-    QDialog, QListWidget, QListWidgetItem, QAbstractItemView,
-)
-from PyQt5.QtCore import Qt, QDate
-from PyQt5.QtGui import QFont, QColor
-
 import database
+import settings
 from utils import to_ist
-from edit_dialog import EditScanDialog
+from ui_helpers import (
+    BG, colored_btn, make_upper, scrolled_tree,
+    ask_yes_no, show_info, show_error,
+)
 
-IST_OFFSET = timedelta(hours=5, minutes=30)
+IST = timedelta(hours=5, minutes=30)
 
-
-def _show_pcb_popup(pcb_ids: list, parent=None):
-    """Show a simple dialog listing all PCB IDs."""
-    dlg = QDialog(parent)
-    dlg.setWindowTitle(f"PCB Sample IDs  ({len(pcb_ids)} total)")
-    dlg.setMinimumWidth(320)
-    dlg.setMinimumHeight(280)
-    lay = QVBoxLayout(dlg)
-    lay.setContentsMargins(14, 12, 14, 12)
-    lay.setSpacing(8)
-
-    title = QLabel(f"{len(pcb_ids)} PCB(s) sampled:")
-    title.setFont(QFont("Segoe UI", 11, QFont.Bold))
-    lay.addWidget(title)
-
-    lst = QListWidget()
-    lst.setFont(QFont("Segoe UI", 12))
-    lst.setAlternatingRowColors(True)
-    for pid in pcb_ids:
-        lst.addItem(QListWidgetItem(pid))
-    lay.addWidget(lst)
-
-    close_btn = QPushButton("Close")
-    close_btn.setMinimumHeight(36)
-    close_btn.clicked.connect(dlg.accept)
-    lay.addWidget(close_btn)
-
-    dlg.exec_()
-
-
-HEADERS = ["Sr.No.", "Type", "Rack No.", "Model", "Qty",
-           "Inspected By", "Taken By", "PCB Samples", "Date/Time (IST)", "", ""]
-
-TYPE_COLORS = {
-    "OK": "#2f9e44",
-    "TH": "#1971c2",
+QC_LABELS = {
+    'PENDING': 'PENDING',
+    'OK':      'OK',
+    'NOT_OK':  'NOT OK',
+    'LEGACY':  'OK (legacy)',
 }
 
+_COLS = ('no', 'rack', 'model', 'qty',
+         'smt_op', 'line', 'smt_t',
+         'qc_res', 'qc_ins', 'qc_t',
+         'th_by', 'th_t')
+_HEADS = (
+    '#', 'Rack No.', 'Model', 'Qty',
+    'SMT Operator', 'Line', 'SMT Handover (IST)',
+    'QC Result', 'QC Inspector', 'QC Time (IST)',
+    'TH Taken By', 'TH Time (IST)',
+)
+_WIDTHS = {
+    'no': 40, 'qty': 50,
+    'line': 80, 'smt_t': 150, 'qc_t': 150, 'th_t': 150,
+}
+_STRETCH = ('rack', 'model', 'smt_op', 'qc_ins', 'th_by')
 
-def _ist_date_to_utc_range(d: date) -> tuple:
-    ist_start = datetime(d.year, d.month, d.day, tzinfo=timezone(IST_OFFSET))
-    ist_end   = ist_start + timedelta(days=1) - timedelta(seconds=1)
-    return (ist_start.astimezone(timezone.utc).isoformat(),
-            ist_end.astimezone(timezone.utc).isoformat())
+
+def _parse_ist_input(s: str):
+    """Parse 'DD/MM/YYYY HH:MM' or 'DD/MM/YYYY' typed by the user → UTC ISO."""
+    s = s.strip()
+    for fmt in ('%d/%m/%Y %H:%M', '%d/%m/%Y'):
+        try:
+            naive = datetime.strptime(s, fmt)
+            ist_aware = naive.replace(tzinfo=timezone(IST))
+            return ist_aware.astimezone(timezone.utc).isoformat()
+        except ValueError:
+            pass
+    return None
 
 
-class LookupTab(QWidget):
-    def __init__(self):
-        super().__init__()
-        self._results: list = []
-        self._setup_ui()
+def _today_ist_range():
+    now_utc = datetime.now(timezone.utc)
+    ist_now = now_utc + IST
+    start = ist_now.replace(hour=0, minute=0, second=0, microsecond=0) - IST
+    end   = ist_now.replace(hour=23, minute=59, second=59, microsecond=0) - IST
+    return start.isoformat(), end.isoformat()
 
-    def _setup_ui(self):
-        root = QVBoxLayout(self)
-        root.setSpacing(10)
-        root.setContentsMargins(16, 14, 16, 14)
 
-        root.addWidget(self._build_filter_card())
-        root.addWidget(self._build_summary_card())
-        root.addWidget(self._build_table_section())
-        root.addLayout(self._build_bottom_row())
+class LookupTab:
+    def __init__(self, parent):
+        self.frame = ttk.Frame(parent, padding=10)
+        self.frame.columnconfigure(0, weight=1)
+        self._results = []
+        self._build()
 
-    # ── filters ───────────────────────────────────────────────────────────────
+    # ── UI ────────────────────────────────────────────────────────────────────
 
-    def _build_filter_card(self) -> QFrame:
-        card = QFrame()
-        card.setStyleSheet("QFrame{background-color:#f1f3f5;border-radius:8px;border:1px solid #dee2e6;}")
-        lay = QVBoxLayout(card)
-        lay.setContentsMargins(12, 10, 12, 10)
-        lay.setSpacing(8)
+    def _build(self):
+        f = self.frame
+        row = 0
 
-        # Rack number (optional)
-        rack_row = QHBoxLayout()
-        lbl = QLabel("RACK NUMBER:")
-        lbl.setFont(QFont("Segoe UI", 11, QFont.Bold))
-        lbl.setFixedWidth(130)
-        rack_row.addWidget(lbl)
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Optional — leave blank to show all")
-        self.search_input.setFont(QFont("Segoe UI", 13))
-        self.search_input.setMinimumHeight(38)
-        self.search_input.returnPressed.connect(self._on_search)
-        rack_row.addWidget(self.search_input, 1)
-        lay.addLayout(rack_row)
+        # ── Filter row ────────────────────────────────────────────────────────
+        filter_frame = ttk.LabelFrame(f, text='Search Filters', padding=8)
+        filter_frame.grid(row=row, column=0, sticky='ew', pady=(0, 6))
+        filter_frame.columnconfigure(1, weight=1)
+        filter_frame.columnconfigure(3, weight=1)
+
+        ttk.Label(filter_frame, text='RACK NUMBER:',
+                  font=('Segoe UI', 10, 'bold')).grid(
+            row=0, column=0, sticky='e', padx=(0, 6))
+        self._rack_var = tk.StringVar()
+        make_upper(self._rack_var)
+        ttk.Entry(filter_frame, textvariable=self._rack_var,
+                  font=('Segoe UI', 11)).grid(
+            row=0, column=1, sticky='ew', ipady=3, padx=(0, 16))
+
+        ttk.Label(filter_frame, text='MODEL:',
+                  font=('Segoe UI', 10, 'bold')).grid(
+            row=0, column=2, sticky='e', padx=(0, 6))
+        self._model_var = tk.StringVar()
+        make_upper(self._model_var)
+        ttk.Entry(filter_frame, textvariable=self._model_var,
+                  font=('Segoe UI', 11)).grid(
+            row=0, column=3, sticky='ew', ipady=3)
 
         # Date range
-        date_row = QHBoxLayout()
-        date_row.setSpacing(10)
-        date_lbl = QLabel("DATE RANGE:")
-        date_lbl.setFont(QFont("Segoe UI", 11, QFont.Bold))
-        date_lbl.setFixedWidth(130)
-        date_row.addWidget(date_lbl)
+        ttk.Label(filter_frame, text='FROM (DD/MM/YYYY HH:MM):',
+                  font=('Segoe UI', 10, 'bold')).grid(
+            row=1, column=0, sticky='e', padx=(0, 6), pady=(6, 0))
+        self._from_var = tk.StringVar()
+        ttk.Entry(filter_frame, textvariable=self._from_var,
+                  font=('Segoe UI', 11)).grid(
+            row=1, column=1, sticky='ew', ipady=3, pady=(6, 0), padx=(0, 16))
 
-        today = QDate.currentDate()
-        self.from_date = QDateEdit()
-        self.from_date.setCalendarPopup(True)
-        self.from_date.setDate(today)
-        self.from_date.setDisplayFormat("dd/MM/yyyy")
-        self.from_date.setFont(QFont("Segoe UI", 12))
-        self.from_date.setMinimumHeight(38)
+        ttk.Label(filter_frame, text='TO (DD/MM/YYYY HH:MM):',
+                  font=('Segoe UI', 10, 'bold')).grid(
+            row=1, column=2, sticky='e', padx=(0, 6), pady=(6, 0))
+        self._to_var = tk.StringVar()
+        ttk.Entry(filter_frame, textvariable=self._to_var,
+                  font=('Segoe UI', 11)).grid(
+            row=1, column=3, sticky='ew', ipady=3, pady=(6, 0))
 
-        to_lbl = QLabel("to")
-        to_lbl.setFont(QFont("Segoe UI", 11))
-        to_lbl.setAlignment(Qt.AlignCenter)
+        # Button row
+        btn_row = ttk.Frame(filter_frame)
+        btn_row.grid(row=2, column=0, columnspan=4, sticky='ew', pady=(8, 0))
 
-        self.to_date = QDateEdit()
-        self.to_date.setCalendarPopup(True)
-        self.to_date.setDate(today)
-        self.to_date.setDisplayFormat("dd/MM/yyyy")
-        self.to_date.setFont(QFont("Segoe UI", 12))
-        self.to_date.setMinimumHeight(38)
+        colored_btn(btn_row, 'SEARCH', 'primary',
+                    self._on_search, font_size=11, pady=5).pack(side='right', padx=(6, 0))
+        colored_btn(btn_row, 'Today', 'secondary',
+                    self._set_today, bold=False, pady=5).pack(side='right', padx=(6, 0))
+        colored_btn(btn_row, 'All Time', 'secondary',
+                    self._set_all_time, bold=False, pady=5).pack(side='right')
 
-        all_btn = QPushButton("All Time")
-        all_btn.setMinimumHeight(38)
-        all_btn.setFont(QFont("Segoe UI", 11))
-        all_btn.setStyleSheet("background-color:#e9ecef;color:#212529;border-radius:4px;border:1px solid #ced4da;")
-        all_btn.clicked.connect(lambda: (
-            self.from_date.setDate(QDate(2000, 1, 1)),
-            self.to_date.setDate(QDate.currentDate()),
-        ))
+        self._set_today()
+        row += 1
 
-        search_btn = QPushButton("SEARCH")
-        search_btn.setMinimumHeight(38)
-        search_btn.setMinimumWidth(110)
-        search_btn.setFont(QFont("Segoe UI", 12, QFont.Bold))
-        search_btn.setStyleSheet("background-color:#1971c2;color:#ffffff;border-radius:5px;")
-        search_btn.clicked.connect(self._on_search)
+        # ── Summary bar ───────────────────────────────────────────────────────
+        self._summary_var = tk.StringVar(value='No search run yet.')
+        tk.Label(f, textvariable=self._summary_var,
+                 font=('Segoe UI', 11, 'bold'), bg=BG,
+                 fg='#1971c2', anchor='w').grid(
+            row=row, column=0, sticky='ew', pady=(0, 1))
+        row += 1
 
-        date_row.addWidget(self.from_date)
-        date_row.addWidget(to_lbl)
-        date_row.addWidget(self.to_date)
-        date_row.addWidget(all_btn)
-        date_row.addStretch()
-        date_row.addWidget(search_btn)
-        lay.addLayout(date_row)
-        return card
+        self._model_summary_var = tk.StringVar()
+        tk.Label(f, textvariable=self._model_summary_var,
+                 font=('Segoe UI', 10), bg=BG,
+                 fg='#495057', anchor='w', wraplength=1200, justify='left').grid(
+            row=row, column=0, sticky='ew', pady=(0, 4))
+        row += 1
 
-    def _build_summary_card(self) -> QFrame:
-        card = QFrame()
-        card.setStyleSheet("QFrame{background-color:#ffffff;border-radius:8px;border:1px solid #dee2e6;}")
-        lay = QVBoxLayout(card)
-        lay.setContentsMargins(12, 8, 12, 8)
-        lay.setSpacing(3)
-        self.summary_title = QLabel("No search run yet.")
-        self.summary_title.setFont(QFont("Segoe UI", 13, QFont.Bold))
-        self.summary_detail = QLabel("")
-        self.summary_detail.setFont(QFont("Segoe UI", 11))
-        self.summary_detail.setWordWrap(True)
-        lay.addWidget(self.summary_title)
-        lay.addWidget(self.summary_detail)
-        return card
+        # ── Main table ────────────────────────────────────────────────────────
+        container, self._tree = scrolled_tree(
+            f, _COLS, _HEADS,
+            col_widths=_WIDTHS, stretch_cols=_STRETCH, height=16)
+        container.grid(row=row, column=0, sticky='nsew')
+        f.rowconfigure(row, weight=1)
+        self._tree.bind('<Double-1>', self._on_double_click)
+        row += 1
 
-    def _build_table_section(self) -> QWidget:
-        container = QWidget()
-        lay = QVBoxLayout(container)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(4)
+        # ── Bottom action row ─────────────────────────────────────────────────
+        bot = ttk.Frame(f)
+        bot.grid(row=row, column=0, sticky='ew', pady=(6, 0))
 
-        self.table = QTableWidget()
-        self.table.setColumnCount(len(HEADERS))
-        self.table.setHorizontalHeaderLabels(HEADERS)
-        hh = self.table.horizontalHeader()
-        hh.setSectionResizeMode(QHeaderView.Stretch)
-        # Fixed-width columns: Sr.No, Type, Qty, PCB Samples, Date/Time, Edit, Delete
-        for col, width in {0: 55, 1: 55, 4: 60, 7: 110, 8: 155, 9: 65, 10: 70}.items():
-            hh.setSectionResizeMode(col, QHeaderView.Fixed)
-            self.table.setColumnWidth(col, width)
-        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setAlternatingRowColors(True)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setShowGrid(False)
-        self.table.cellDoubleClicked.connect(self._on_cell_double_clicked)
-        lay.addWidget(self.table)
-        return container
+        self._edit_btn = colored_btn(bot, 'Edit Selected', 'primary',
+                                     self._on_edit, bold=False, pady=5,
+                                     state='disabled')
+        self._edit_btn.pack(side='left', padx=(0, 6))
 
-    def _build_bottom_row(self) -> QHBoxLayout:
-        row = QHBoxLayout()
-        row.addStretch()
-        self.export_btn = QPushButton("Export to Excel")
-        self.export_btn.setMinimumHeight(42)
-        self.export_btn.setMinimumWidth(160)
-        self.export_btn.setFont(QFont("Segoe UI", 12, QFont.Bold))
-        self.export_btn.setStyleSheet(
-            "background-color:#2f9e44;color:#ffffff;border-radius:5px;"
-        )
-        self.export_btn.setEnabled(False)
-        self.export_btn.clicked.connect(self._on_export)
-        row.addWidget(self.export_btn)
-        return row
+        self._del_btn = colored_btn(bot, 'Delete Selected', 'danger',
+                                    self._on_delete, bold=False, pady=5,
+                                    state='disabled')
+        self._del_btn.pack(side='left')
 
-    # ── search ────────────────────────────────────────────────────────────────
+        self._export_btn = colored_btn(bot, 'Export to Excel', 'success',
+                                       self._on_export, font_size=11, pady=5,
+                                       state='disabled')
+        self._export_btn.pack(side='right')
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def _set_today(self):
+        now_ist = datetime.now(timezone.utc) + IST
+        self._from_var.set(now_ist.strftime('%d/%m/%Y 00:00'))
+        self._to_var.set(now_ist.strftime('%d/%m/%Y 23:59'))
+
+    def _set_all_time(self):
+        self._from_var.set('01/01/2000 00:00')
+        self._to_var.set('31/12/2099 23:59')
+
+    def _selected_cycle(self):
+        sel = self._tree.selection()
+        if not sel:
+            return None
+        iid = sel[0]
+        idx = self._tree.index(iid)
+        if 0 <= idx < len(self._results):
+            return self._results[idx]
+        return None
+
+    # ── Search ────────────────────────────────────────────────────────────────
 
     def _on_search(self):
-        rack_number = self.search_input.text().strip().upper() or None
-        fd = self.from_date.date().toPyDate()
-        td = self.to_date.date().toPyDate()
-        utc_from, _ = _ist_date_to_utc_range(fd)
-        _, utc_to   = _ist_date_to_utc_range(td)
+        rack  = self._rack_var.get().strip().upper() or None
+        model = self._model_var.get().strip().upper() or None
 
-        results = database.search_events(rack_number, utc_from, utc_to)
+        utc_from = _parse_ist_input(self._from_var.get())
+        utc_to   = _parse_ist_input(self._to_var.get())
+        if utc_from is None or utc_to is None:
+            show_error('Bad Date',
+                       'Use DD/MM/YYYY HH:MM format for date fields (e.g. 09/04/2026 00:00).')
+            return
+
+        results = database.get_cycles(rack, utc_from, utc_to, model)
         self._results = results
+        self._populate_table(results)
+
+        for btn in (self._edit_btn, self._del_btn, self._export_btn):
+            btn.config(state='normal' if results else 'disabled')
 
         if not results:
-            self.summary_title.setText("No records found.")
-            self.summary_title.setStyleSheet("color:#c92a2a;")
-            self.summary_detail.setText("")
-            self.table.setRowCount(0)
-            self.export_btn.setEnabled(False)
-            return
+            self._summary_var.set('No records found.')
+            self._model_summary_var.set('')
+        else:
+            self._update_summary(results)
+            self._update_breakdown(results)
 
-        self._update_summary(results)
-        self._populate_table(results)
-        self.export_btn.setEnabled(True)
+    def _update_summary(self, results):
+        pending = sum(1 for r in results if r['qc_result'] == 'PENDING')
+        ok_fg   = sum(1 for r in results if r['qc_result'] in ('OK', 'LEGACY') and not r.get('th_id'))
+        at_th   = sum(1 for r in results if r.get('th_id'))
+        not_ok  = sum(1 for r in results if r['qc_result'] == 'NOT_OK')
+        parts   = []
+        if pending: parts.append(f"{pending} pending QC")
+        if ok_fg:   parts.append(f"{ok_fg} in FG")
+        if at_th:   parts.append(f"{at_th} at TH")
+        if not_ok:  parts.append(f"{not_ok} returned to SMT")
+        self._summary_var.set(
+            f"{len(results)} cycle{'s' if len(results) != 1 else ''}  ·  " +
+            '  ·  '.join(parts))
 
-    def _update_summary(self, results: list):
-        ok_count = sum(1 for r in results if r["event_type"] == "OK")
-        th_count = sum(1 for r in results if r["event_type"] == "TH")
-        total_qty = sum(r["quantity"] for r in results if r["event_type"] == "OK")
-
-        self.summary_title.setText(
-            f"{ok_count} OK scan{'s' if ok_count != 1 else ''}  ·  "
-            f"{th_count} sent to TH  ·  Total Qty in OK scans: {total_qty}"
-        )
-        self.summary_title.setStyleSheet("color:#2f9e44;")
-
-        model_qty: dict[str, int] = {}
+    def _update_breakdown(self, results):
+        md = {}
         for r in results:
-            if r["event_type"] == "OK":
-                model_qty[r["model"]] = model_qty.get(r["model"], 0) + r["quantity"]
-        parts = [f"{m}: {q}" for m, q in sorted(model_qty.items())]
-        self.summary_detail.setText("By model (OK) — " + "  |  ".join(parts) if parts else "")
+            m = r['model']
+            if m not in md:
+                md[m] = {'qty': 0, 'pending': 0, 'ok_fg': 0, 'at_th': 0, 'not_ok': 0}
+            md[m]['qty'] += r['quantity']
+            qr = r['qc_result']
+            if qr == 'PENDING':
+                md[m]['pending'] += 1
+            elif r.get('th_id'):
+                md[m]['at_th']  += 1
+            elif qr in ('OK', 'LEGACY'):
+                md[m]['ok_fg']  += 1
+            elif qr == 'NOT_OK':
+                md[m]['not_ok'] += 1
 
-    def _populate_table(self, results: list):
-        self.table.setRowCount(len(results))
-        for row, ev in enumerate(results):
-            # PCB samples — only for OK scans
-            if ev["event_type"] == "OK":
-                pcb_rows = database.get_pcb_samples(ev["id"])
-                pcb_ids  = [r["pcb_id"] for r in pcb_rows]
-                pcb_text = f"{len(pcb_ids)} sampled" if pcb_ids else "0 sampled"
-            else:
-                pcb_ids  = []
-                pcb_text = "—"
+        parts = []
+        for model in sorted(md):
+            d = md[model]
+            detail = []
+            r = lambda n: f"{n} rack{'s' if n > 1 else ''}"
+            if d['at_th']:   detail.append(f"{r(d['at_th'])} to TH")
+            if d['ok_fg']:   detail.append(f"{r(d['ok_fg'])} in FG")
+            if d['pending']: detail.append(f"{r(d['pending'])} pending")
+            if d['not_ok']:  detail.append(f"{r(d['not_ok'])} NOT OK")
+            parts.append(f"{model}: {d['qty']}  ({',  '.join(detail)})" if detail
+                         else f"{model}: {d['qty']}")
 
-            values = [
-                str(row + 1),
-                ev["event_type"],
-                ev["rack_number"],
-                ev["model"],
-                str(ev["quantity"]),
-                ev["inspected_by"],
-                ev["taken_by"] or "—",
-                pcb_text,
-                to_ist(ev["created_at"]),
-            ]
-            for col, text in enumerate(values):
-                item = QTableWidgetItem(text)
-                item.setTextAlignment(Qt.AlignCenter)
-                if col == 1:
-                    item.setForeground(
-                        QColor(TYPE_COLORS.get(ev["event_type"], "#212529"))
-                    )
-                # Store PCB IDs on the PCB cell for double-click retrieval
-                if col == 7:
-                    item.setData(Qt.UserRole, pcb_ids)
-                    if pcb_ids:
-                        item.setToolTip("Double-click to view PCB IDs")
-                self.table.setItem(row, col, item)
+        self._model_summary_var.set('   |   '.join(parts))
 
-            scan_type = ev["event_type"].lower()
-            scan_id   = ev["id"]
+    def _populate_table(self, results):
+        self._tree.delete(*self._tree.get_children())
+        for i, c in enumerate(results):
+            tag = 'odd' if i % 2 == 0 else 'even'
+            self._tree.insert('', 'end', tags=(tag,), values=(
+                i + 1,
+                c['rack_number'],
+                c['model'],
+                c['quantity'],
+                c.get('smt_operator') or '—',
+                c.get('line') or '—',
+                to_ist(c['smt_time']) if c.get('smt_time') else '—',
+                QC_LABELS.get(c['qc_result'], c['qc_result']),
+                c.get('qc_inspector') or '—',
+                to_ist(c['qc_time']) if c.get('qc_time') else '—',
+                c.get('th_taken_by') or '—',
+                to_ist(c['th_time']) if c.get('th_time') else '—',
+            ))
 
-            edit_btn = QPushButton("Edit")
-            edit_btn.setStyleSheet(
-                "background-color:#1971c2;color:#ffffff;"
-                "border-radius:3px;padding:3px 6px;font-size:11px;"
-            )
-            edit_btn.clicked.connect(
-                lambda _c, st=scan_type, sid=scan_id: self._edit(st, sid)
-            )
-            self.table.setCellWidget(row, 9, edit_btn)
+    # ── Double-click: show PCB IDs or NOT OK reason ───────────────────────────
 
-            del_btn = QPushButton("Delete")
-            del_btn.setStyleSheet(
-                "background-color:#c92a2a;color:#ffffff;"
-                "border-radius:3px;padding:3px 6px;font-size:11px;"
-            )
-            del_btn.clicked.connect(
-                lambda _c, st=scan_type, sid=scan_id,
-                       rack=ev["rack_number"]: self._delete(st, sid, rack)
-            )
-            self.table.setCellWidget(row, 10, del_btn)
-
-    # ── double-click PCB cell ────────────────────────────────────────────────
-
-    def _on_cell_double_clicked(self, row: int, col: int):
-        if col != 7:
+    def _on_double_click(self, event):
+        col_id = self._tree.identify_column(event.x)
+        col_idx = int(col_id.replace('#', '')) - 1
+        sel = self._tree.selection()
+        if not sel:
             return
-        item = self.table.item(row, col)
-        if not item:
+        iid = sel[0]
+        idx = self._tree.index(iid)
+        if idx >= len(self._results):
             return
-        pcb_ids = item.data(Qt.UserRole) or []
-        if not pcb_ids:
-            return
-        _show_pcb_popup(pcb_ids, self)
+        cycle = self._results[idx]
 
-    # ── edit / delete ────────────────────────────────────────────────────────
+        if col_idx == 7:  # QC Result — show NOT OK reason
+            reason = cycle.get('not_ok_reason', '')
+            if not reason or cycle['qc_result'] != 'NOT_OK':
+                return
+            dlg = tk.Toplevel(self.frame.winfo_toplevel())
+            dlg.title('NOT OK — Reason')
+            dlg.resizable(False, False)
+            dlg.grab_set()
+            frm = ttk.Frame(dlg, padding=16)
+            frm.pack(fill='both', expand=True)
+            ttk.Label(frm, text='Reason for NOT OK:',
+                      font=('Segoe UI', 11, 'bold')).pack(anchor='w')
+            tk.Label(frm, text=reason, font=('Segoe UI', 12),
+                     bg='#fff5f5', fg='#c92a2a', relief='solid', bd=1,
+                     wraplength=380, justify='left', padx=10, pady=8).pack(
+                fill='x', pady=8)
+            colored_btn(frm, 'Close', 'secondary',
+                        dlg.destroy, pady=5).pack(fill='x')
+            dlg.wait_window()
 
-    def _edit(self, scan_type: str, scan_id: int):
-        try:
-            dlg = EditScanDialog(scan_type, scan_id, self)
-        except ValueError:
+    # ── Edit / Delete ─────────────────────────────────────────────────────────
+
+    def _on_edit(self):
+        cycle = self._selected_cycle()
+        if not cycle:
             return
-        if dlg.exec_():
+        from edit_dialog import show_edit_dialog
+        if show_edit_dialog(dict(cycle), self.frame.winfo_toplevel()):
             self._on_search()
 
-    def _delete(self, scan_type: str, scan_id: int, rack_number: str):
-        if scan_type == "ok":
-            linked = database.get_th_scan_for_ok(scan_id)
-            if linked:
-                msg = (
-                    f"This OK scan for rack {rack_number} also has a linked TH scan.\n"
-                    f"Deleting it will also delete the TH scan.\n\nProceed?"
-                )
-            else:
-                msg = f"Delete this OK scan for rack {rack_number}?"
-        else:
-            msg = (
-                f"Delete this TH scan for rack {rack_number}?\n"
-                f"The rack will become active in FG again."
-            )
-
-        reply = QMessageBox.question(
-            self, "Delete Record", msg,
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
-        if reply != QMessageBox.Yes:
+    def _on_delete(self):
+        cycle = self._selected_cycle()
+        if not cycle:
             return
-
-        if scan_type == "ok":
-            database.delete_ok_scan(scan_id)
-        else:
-            database.delete_th_scan(scan_id)
-
+        rack = cycle['rack_number']
+        msg = (f"Delete the full cycle for rack {rack}?\n"
+               f"This removes the SMT handover and all linked QC/TH records."
+               if cycle['cycle_type'] == 'smt' else
+               f"Delete this legacy QC/TH record for rack {rack}?")
+        if not ask_yes_no('Delete Cycle', msg):
+            return
+        if cycle['cycle_type'] == 'smt' and cycle.get('smt_id'):
+            database.delete_smt_handover(cycle['smt_id'])
+        elif cycle.get('ok_scan_id'):
+            database.delete_ok_scan(cycle['ok_scan_id'])
         self._on_search()
 
-    # ── export ───────────────────────────────────────────────────────────────
+    # ── Export ────────────────────────────────────────────────────────────────
 
     def _on_export(self):
         if not self._results:
             return
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Save Excel File",
-            str(Path.home() / "rack_export.xlsx"),
-            "Excel Files (*.xlsx)",
+        path = filedialog.asksaveasfilename(
+            defaultextension='.xlsx',
+            filetypes=[('Excel Files', '*.xlsx')],
+            initialfile='rack_cycles_export.xlsx',
+            initialdir=str(Path.home()),
         )
         if not path:
             return
         try:
             self._write_excel(path)
-            QMessageBox.information(self, "Export Complete", f"Saved to:\n{path}")
+            show_info('Export Complete', f"Saved to:\n{path}")
         except Exception as exc:
-            QMessageBox.critical(self, "Export Failed", str(exc))
+            show_error('Export Failed', str(exc))
 
-    def _write_excel(self, path: str):
+    def _write_excel(self, path):
         import openpyxl
         from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
         from openpyxl.utils import get_column_letter
 
         wb = openpyxl.Workbook()
-
-        HEADER_FILL = PatternFill("solid", fgColor="2F5496")
-        HEADER_FONT = Font(bold=True, color="FFFFFF", size=11)
-        OK_FILL     = PatternFill("solid", fgColor="E2EFDA")   # light green for OK rows
-        TH_FILL     = PatternFill("solid", fgColor="DDEBF7")   # light blue for TH rows
-        WHITE_FILL  = PatternFill("solid", fgColor="FFFFFF")
-        CENTER      = Alignment(horizontal="center", vertical="center")
-        thin        = Side(style="thin", color="AAAAAA")
-        BORDER      = Border(left=thin, right=thin, top=thin, bottom=thin)
-        NORMAL_FONT = Font(color="000000", size=11)
-
-        # ── Sheet 1: All Events ──────────────────────────────────────────────
         ws = wb.active
-        ws.title = "All Events"
+        ws.title = 'Rack Cycles'
 
-        headers = ["Sr. No.", "Type", "Rack Number", "Model", "Quantity",
-                   "Inspected By", "Taken By", "PCB Samples", "Date/Time (IST)"]
-        ws.append(headers)
-        for col in range(1, len(headers) + 1):
+        HDR_FILL = PatternFill('solid', fgColor='2F5496')
+        HDR_FONT = Font(bold=True, color='FFFFFF', size=11)
+        NORM_FONT = Font(color='000000', size=11)
+        CENTER = Alignment(horizontal='center', vertical='center')
+        thin = Side(style='thin', color='AAAAAA')
+        BORDER = Border(left=thin, right=thin, top=thin, bottom=thin)
+        FILLS = {
+            'TH':     PatternFill('solid', fgColor='DDEBF7'),
+            'OK':     PatternFill('solid', fgColor='E2EFDA'),
+            'NOT_OK': PatternFill('solid', fgColor='FADBD8'),
+            'PENDING':PatternFill('solid', fgColor='FFF3CD'),
+        }
+        WHITE = PatternFill('solid', fgColor='FFFFFF')
+
+        col_headers = [
+            'Sr. No.', 'Rack Number', 'Model', 'Qty',
+            'SMT Operator', 'Line', 'SMT Handover Time (IST)',
+            'QC Result', 'NOT OK Reason', 'QC Inspector', 'QC Time (IST)',
+            'TH Taken By', 'TH Time (IST)',
+        ]
+        ws.append(col_headers)
+        for col in range(1, len(col_headers) + 1):
             c = ws.cell(1, col)
-            c.fill = HEADER_FILL; c.font = HEADER_FONT
+            c.fill = HDR_FILL; c.font = HDR_FONT
             c.alignment = CENTER; c.border = BORDER
         ws.row_dimensions[1].height = 22
 
-        WRAP_CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        WRAP = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
-        for i, ev in enumerate(self._results, 1):
-            if ev["event_type"] == "OK":
-                pcbs = database.get_pcb_samples(ev["id"])
-                pcb_ids = [r["pcb_id"] for r in pcbs]
-                # Each PCB ID on its own line inside the cell
-                pcb_text = "\n".join(pcb_ids) if pcb_ids else ""
-            else:
-                pcb_ids  = []
-                pcb_text = ""
-            row_data = [
+        for i, cycle in enumerate(self._results, 1):
+            ws.append([
                 i,
-                ev["event_type"],
-                ev["rack_number"],
-                ev["model"],
-                ev["quantity"],
-                ev["inspected_by"],
-                ev["taken_by"] or "",
-                pcb_text,
-                to_ist(ev["created_at"]),
-            ]
-            ws.append(row_data)
-            fill = OK_FILL if ev["event_type"] == "OK" else TH_FILL
-            for col in range(1, len(row_data) + 1):
-                c = ws.cell(i + 1, col)
-                c.fill = fill; c.font = NORMAL_FONT
-                c.border = BORDER
-                # PCB Samples column (col 8) — wrap + auto row height
-                if col == 8 and ev["event_type"] == "OK":
-                    c.alignment = WRAP_CENTER
-                    ws.row_dimensions[i + 1].height = max(15 * len(pcb_ids), 150)
-                else:
-                    c.alignment = CENTER
+                cycle['rack_number'], cycle['model'], cycle['quantity'],
+                cycle.get('smt_operator') or '',
+                cycle.get('line') or '',
+                to_ist(cycle['smt_time']) if cycle.get('smt_time') else '',
+                QC_LABELS.get(cycle['qc_result'], cycle['qc_result']),
+                cycle.get('not_ok_reason') or '',
+                cycle.get('qc_inspector') or '',
+                to_ist(cycle['qc_time']) if cycle.get('qc_time') else '',
+                cycle.get('th_taken_by') or '',
+                to_ist(cycle['th_time']) if cycle.get('th_time') else '',
+            ])
 
-        # Col widths: Sr, Type, Rack, Model, Qty, InspectedBy, TakenBy, PCBSamples, DateTime
-        for col, w in enumerate([9, 8, 16, 20, 12, 20, 20, 28, 22], 1):
+            qr   = cycle['qc_result']
+            fill = FILLS['TH'] if cycle.get('th_id') else FILLS.get(qr, WHITE)
+            for col in range(1, len(col_headers) + 1):
+                c = ws.cell(i + 1, col)
+                c.fill = fill; c.font = NORM_FONT
+                c.border = BORDER; c.alignment = CENTER
+            ws.row_dimensions[i + 1].height = 18
+
+        for col, w in enumerate([8,16,18,8,18,12,24,14,28,18,24,18,24], 1):
             ws.column_dimensions[get_column_letter(col)].width = w
 
-        # ── Sheet 2: Summary ─────────────────────────────────────────────────
-        ws2 = wb.create_sheet("Summary")
+        # Summary sheet
+        ws2 = wb.create_sheet('Summary')
+        SEC  = Font(bold=True, size=12, color='2F5496')
+        TOT  = Font(bold=True, size=11)
+        SHDR = PatternFill('solid', fgColor='2F5496')
+        SHDR_F = Font(bold=True, color='FFFFFF', size=11)
+        ALT  = PatternFill('solid', fgColor='DCE6F1')
 
-        SUBHDR_FILL = PatternFill("solid", fgColor="2F5496")
-        SUBHDR_FONT = Font(bold=True, color="FFFFFF", size=11)
-        ALT_FILL    = PatternFill("solid", fgColor="DCE6F1")
-        SEC_FONT    = Font(bold=True, size=12, color="2F5496")
-        TOTAL_FONT  = Font(bold=True, size=11)
-
-        def section(title):
-            ws2.append([title])
-            ws2.cell(ws2.max_row, 1).font = SEC_FONT
-
-        def table_header(*cols):
-            ws2.append(list(cols))
-            r = ws2.max_row
-            for c in range(1, len(cols) + 1):
+        def _sec(t):
+            ws2.append([t]); ws2.cell(ws2.max_row, 1).font = SEC
+        def _thdr(*cols):
+            ws2.append(list(cols)); r = ws2.max_row
+            for c in range(1, len(cols)+1):
                 cell = ws2.cell(r, c)
-                cell.fill = SUBHDR_FILL; cell.font = SUBHDR_FONT
+                cell.fill = SHDR; cell.font = SHDR_F
                 cell.alignment = CENTER; cell.border = BORDER
-            ws2.row_dimensions[r].height = 20
-
-        def data_row(vals, alt):
-            ws2.append(vals)
-            f = ALT_FILL if alt else WHITE_FILL
-            for c in range(1, len(vals) + 1):
+        def _drow(vals, alt):
+            ws2.append(vals); f2 = ALT if alt else WHITE
+            for c in range(1, len(vals)+1):
                 cell = ws2.cell(ws2.max_row, c)
-                cell.fill = f; cell.font = NORMAL_FONT
+                cell.fill = f2; cell.font = NORM_FONT
                 cell.alignment = CENTER; cell.border = BORDER
 
-        ok_rows = [r for r in self._results if r["event_type"] == "OK"]
-        th_rows = [r for r in self._results if r["event_type"] == "TH"]
+        pending = [r for r in self._results if r['qc_result'] == 'PENDING']
+        ok_fg   = [r for r in self._results if r['qc_result'] in ('OK','LEGACY') and not r.get('th_id')]
+        at_th   = [r for r in self._results if r.get('th_id')]
+        not_ok  = [r for r in self._results if r['qc_result'] == 'NOT_OK']
 
-        # Totals
-        section("OVERALL TOTALS")
-        for label, val in [
-            ("Total OK Scans",    len(ok_rows)),
-            ("Total Sent to TH",  len(th_rows)),
-            ("Total Quantity (OK)", sum(r["quantity"] for r in ok_rows)),
-        ]:
-            ws2.append([label, val])
-            for c in [1, 2]:
+        _sec('OVERALL TOTALS')
+        for lbl, val in [('Total Cycles', len(self._results)),
+                         ('Pending for QC', len(pending)),
+                         ('QC OK — In FG', len(ok_fg)),
+                         ('Sent to TH', len(at_th)),
+                         ('QC NOT OK — Returned to SMT', len(not_ok))]:
+            ws2.append([lbl, val])
+            for c in [1,2]:
                 cell = ws2.cell(ws2.max_row, c)
-                cell.fill = WHITE_FILL; cell.font = TOTAL_FONT
+                cell.fill = WHITE; cell.font = TOT
                 cell.alignment = CENTER; cell.border = BORDER
         ws2.append([])
 
-        # By model
-        section("BY MODEL  (OK scans)")
-        table_header("Model", "Scan Count", "Total Quantity")
-        model_data: dict[str, list] = {}
-        for r in ok_rows:
-            if r["model"] not in model_data:
-                model_data[r["model"]] = [0, 0]
-            model_data[r["model"]][0] += 1
-            model_data[r["model"]][1] += r["quantity"]
-        for i, (m, (cnt, qty)) in enumerate(sorted(model_data.items()), 1):
-            data_row([m, cnt, qty], i % 2 == 0)
-        ws2.append([])
-
-        # By rack
-        section("BY RACK")
-        table_header("Rack Number", "OK Scans", "Sent to TH", "Total Qty")
-        rack_data: dict[str, list] = {}
+        _sec('BY MODEL  (QC OK cycles)')
+        _thdr('Model', 'Cycle Count', 'Total Qty')
+        md = {}
         for r in self._results:
-            if r["rack_number"] not in rack_data:
-                rack_data[r["rack_number"]] = [0, 0, 0]
-            if r["event_type"] == "OK":
-                rack_data[r["rack_number"]][0] += 1
-                rack_data[r["rack_number"]][2] += r["quantity"]
-            else:
-                rack_data[r["rack_number"]][1] += 1
-        for i, (rack, (ok, th, qty)) in enumerate(sorted(rack_data.items()), 1):
-            data_row([rack, ok, th, qty], i % 2 == 0)
+            if r['qc_result'] in ('OK','LEGACY'):
+                md.setdefault(r['model'], [0,0])
+                md[r['model']][0] += 1; md[r['model']][1] += r['quantity']
+        for j, (m,(cnt,qty)) in enumerate(sorted(md.items()), 1):
+            _drow([m, cnt, qty], j % 2 == 0)
+        ws2.append([])
 
-        for col, w in enumerate([22, 14, 14, 16], 1):
+        _sec('BY RACK')
+        _thdr('Rack Number','Cycles','Pending','OK/FG','At TH','NOT OK')
+        rd = {}
+        for r in self._results:
+            rk = r['rack_number']
+            rd.setdefault(rk, [0,0,0,0,0])
+            rd[rk][0] += 1
+            if r['qc_result']=='PENDING': rd[rk][1]+=1
+            elif r['qc_result'] in ('OK','LEGACY') and not r.get('th_id'): rd[rk][2]+=1
+            elif r.get('th_id'): rd[rk][3]+=1
+            elif r['qc_result']=='NOT_OK': rd[rk][4]+=1
+        for j, (rk, vals) in enumerate(sorted(rd.items()), 1):
+            _drow([rk]+vals, j % 2 == 0)
+
+        for col, w in enumerate([18,10,10,10,10,10], 1):
             ws2.column_dimensions[get_column_letter(col)].width = w
 
         wb.save(path)
+
+    def on_activate(self):
+        self._rack_var.set('')

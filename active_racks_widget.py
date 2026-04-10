@@ -1,83 +1,74 @@
-from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QTableWidget, QTableWidgetItem, QHeaderView,
-    QAbstractItemView,
-)
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
+"""Widget showing racks currently in FG (QC OK, not yet sent to TH)."""
+import tkinter as tk
+from tkinter import ttk
 
 import database
 from utils import to_ist
+from ui_helpers import scrolled_tree, fill_tree, BG
 
-HEADERS = ["Rack No.", "Model", "Qty", "Inspected By", "Inspected PCBs", "In FG Since (IST)"]
+_COLS = ('rack', 'model', 'qty', 'inspector', 'since')
+_HEADS = ('Rack No.', 'Model', 'Qty', 'Inspected By', 'In FG Since (IST)')
+_WIDTHS = {'qty': 60, 'since': 160}
+_STRETCH = ('rack', 'model', 'inspector', 'since')
 
-# PCB count col index
-_PCB_COL = 4
 
+class ActiveRacksWidget:
+    def __init__(self, parent):
+        self.frame = ttk.Frame(parent)
+        self.frame.columnconfigure(0, weight=1)
+        self.frame.rowconfigure(1, weight=1)
 
-class ActiveRacksWidget(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._setup_ui()
+        tk.Label(self.frame, text='Racks in FG',
+                 font=('Segoe UI', 11, 'bold'), bg=BG).grid(
+            row=0, column=0, sticky='w', pady=(4, 2))
 
-    def _setup_ui(self):
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(4)
+        container, self._tree = scrolled_tree(
+            self.frame, _COLS, _HEADS,
+            col_widths=_WIDTHS, stretch_cols=_STRETCH, height=8)
+        container.grid(row=1, column=0, sticky='nsew')
 
-        hdr = QLabel("Active Racks in FG")
-        hdr.setFont(QFont("Segoe UI", 11, QFont.Bold))
-        lay.addWidget(hdr)
-
-        self._table = QTableWidget()
-        self._table.setColumnCount(len(HEADERS))
-        self._table.setHorizontalHeaderLabels(HEADERS)
-        hh = self._table.horizontalHeader()
-        hh.setSectionResizeMode(QHeaderView.Stretch)
-        for col, width in {2: 60, _PCB_COL: 140}.items():
-            hh.setSectionResizeMode(col, QHeaderView.Fixed)
-            self._table.setColumnWidth(col, width)
-        self._table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self._table.setAlternatingRowColors(True)
-        self._table.verticalHeader().setVisible(False)
-        self._table.setShowGrid(False)
-        self._table.cellDoubleClicked.connect(self._on_double_click)
-        lay.addWidget(self._table)
+        # Double-click PCB cell to show IDs
+        self._tree.bind('<Double-1>', self._on_double_click)
+        self._pcb_data = {}   # iid -> list[str]
 
     def refresh(self):
         racks = database.get_active_racks()
-        self._table.setRowCount(len(racks))
-        for row, r in enumerate(racks):
-            pcb_rows = database.get_pcb_samples(r["id"])
-            pcb_ids  = [p["pcb_id"] for p in pcb_rows]
-            pcb_text = f"{len(pcb_ids)} sampled" if pcb_ids else "0 sampled"
+        self._tree.delete(*self._tree.get_children())
+        for i, r in enumerate(racks):
+            tag = 'odd' if i % 2 == 0 else 'even'
+            self._tree.insert('', 'end', tags=(tag,), values=(
+                r['rack_number'], r['model'], r['quantity'],
+                r['inspected_by'], to_ist(r['created_at']),
+            ))
 
-            values = [
-                r["rack_number"],
-                r["model"],
-                str(r["quantity"]),
-                r["inspected_by"],
-                pcb_text,
-                to_ist(r["created_at"]),
-            ]
-            for col, text in enumerate(values):
-                item = QTableWidgetItem(text)
-                item.setTextAlignment(Qt.AlignCenter)
-                if col == _PCB_COL:
-                    item.setData(Qt.UserRole, pcb_ids)
-                    if pcb_ids:
-                        item.setToolTip("Double-click to view PCB IDs")
-                self._table.setItem(row, col, item)
+    def _on_double_click(self, event):
+        pass
 
-    def _on_double_click(self, row: int, col: int):
-        if col != _PCB_COL:
-            return
-        item = self._table.item(row, col)
-        if not item:
-            return
-        pcb_ids = item.data(Qt.UserRole) or []
-        if not pcb_ids:
-            return
-        # Import here to avoid circular imports
-        from lookup_tab import _show_pcb_popup
-        _show_pcb_popup(pcb_ids, self)
+
+def _show_pcb_popup(pcb_ids, parent):
+    import tkinter as tk
+    from tkinter import ttk
+    dlg = tk.Toplevel(parent)
+    dlg.title(f"PCB Sample IDs  ({len(pcb_ids)} total)")
+    dlg.resizable(False, False)
+    dlg.grab_set()
+
+    frame = ttk.Frame(dlg, padding=14)
+    frame.pack(fill='both', expand=True)
+
+    lb = tk.Listbox(frame, font=('Segoe UI', 12), width=30, height=12,
+                    selectmode='none', relief='solid', bd=1)
+    sb = ttk.Scrollbar(frame, command=lb.yview)
+    lb.configure(yscrollcommand=sb.set)
+    lb.pack(side='left', fill='both', expand=True)
+    sb.pack(side='left', fill='y')
+
+    for pid in pcb_ids:
+        lb.insert('end', pid)
+
+    tk.Button(dlg, text='Close', font=('Segoe UI', 11),
+              bg='#e9ecef', fg='#495057', relief='flat',
+              command=dlg.destroy, pady=6).pack(
+        fill='x', padx=14, pady=(0, 14))
+
+    dlg.wait_window()

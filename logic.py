@@ -89,6 +89,61 @@ def perform_ok_scan(
     return ScanResult(True, f"Rack {rack_number} added to FG.", "success", scan_id)
 
 
+def validate_smt_handover(
+    rack_number: str,
+    model: str,
+    quantity: int,
+    smt_operator: str,
+    line: str,
+) -> ScanResult:
+    """Validate an SMT handover before writing to DB."""
+    if not rack_number:
+        return ScanResult(False, "Rack Number is required.", "error")
+    if not validate_rack_number(rack_number):
+        return ScanResult(
+            False,
+            f"Invalid format '{rack_number}'. Expected PR/### or MR/###.",
+            "error",
+        )
+    if not model:
+        return ScanResult(False, "Model is required.", "error")
+    if not (1 <= quantity <= 10_000):
+        return ScanResult(False, "Quantity must be between 1 and 10,000.", "error")
+    if not line:
+        return ScanResult(False, "Line is required.", "error")
+    if not smt_operator:
+        return ScanResult(False, "SMT Operator is required.", "error")
+
+    if database.get_pending_rack(rack_number):
+        return ScanResult(
+            False,
+            f"Rack {rack_number} is already pending for QC.",
+            "error",
+        )
+    if database.get_active_rack(rack_number):
+        return ScanResult(
+            False,
+            f"Rack {rack_number} is already in FG. Send it to TH first.",
+            "error",
+        )
+    return ScanResult(True, "")
+
+
+def perform_smt_handover(
+    rack_number: str,
+    model: str,
+    quantity: int,
+    smt_operator: str,
+    line: str,
+) -> ScanResult:
+    """Validate and insert an SMT handover."""
+    result = validate_smt_handover(rack_number, model, quantity, smt_operator, line)
+    if not result.success:
+        return result
+    smt_id = database.insert_smt_handover(rack_number, model, quantity, smt_operator, line)
+    return ScanResult(True, f"Rack {rack_number} handed over to QC.", "success", smt_id)
+
+
 def check_th_completion_lock(rack_number: str) -> Optional[ScanResult]:
     """
     TH tab only — checks if this rack was sent to TH recently.

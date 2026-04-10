@@ -1,228 +1,249 @@
-from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QFrame, QMessageBox,
-)
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QFont, QIntValidator
+"""QC tab — processes racks from Pending for QC, marks OK or NOT OK."""
+import tkinter as tk
+from tkinter import ttk, simpledialog
 
 import database
-from logic import validate_ok_scan, perform_ok_scan
-from pcb_dialog import PCBSamplingDialog
-from utils import now_ist_display
-from active_racks_widget import ActiveRacksWidget
-
-STATUS_COLOR = {
-    "success": "#2f9e44",
-    "warning": "#e67700",
-    "error":   "#c92a2a",
-}
+from utils import now_ist_display, normalise_rack_number
+from pending_qc_widget import PendingQCWidget
+from ui_helpers import (
+    BG, colored_btn, form_label, readonly_entry, text_entry,
+    status_label, make_upper, STATUS_FG, ask_yes_no, show_warning,
+)
 
 
-class OKTab(QWidget):
-    def __init__(self):
-        super().__init__()
-        self._last_scan_id = None
-        self._setup_ui()
-        self._start_clock()
+class OKTab:
+    def __init__(self, parent):
+        self.frame = ttk.Frame(parent, padding=14)
+        self.frame.columnconfigure(1, weight=1)
+        self._last_action = None
+        self._build()
+        self._tick()
 
-    # ── UI ───────────────────────────────────────────────────────────────────
+    def _build(self):
+        f = self.frame
+        row = 0
 
-    def _setup_ui(self):
-        root = QVBoxLayout(self)
-        root.setSpacing(10)
-        root.setContentsMargins(16, 14, 16, 14)
-
-        root.addWidget(self._build_form())
-        root.addLayout(self._build_action_row())
-        root.addWidget(self._build_status_label())
-
-        self._active = ActiveRacksWidget()
-        root.addWidget(self._active)
-
-    def _build_form(self) -> QFrame:
-        frame = QFrame()
-        lay = QVBoxLayout(frame)
-        lay.setSpacing(10)
-        lay.setContentsMargins(0, 0, 0, 0)
-
-        # Date/Time (read-only clock)
-        self.datetime_display = QLineEdit()
-        self.datetime_display.setReadOnly(True)
-        self.datetime_display.setFont(QFont("Segoe UI", 13))
-        self.datetime_display.setMinimumHeight(40)
-        self.datetime_display.setStyleSheet(
-            "QLineEdit{background-color:#e7f5ff;color:#1864ab;"
-            "border:1px solid #a5d8ff;border-radius:4px;padding:4px 8px;}"
-        )
-        lay.addLayout(self._row("DATE/TIME:", self.datetime_display))
+        # Date/Time
+        form_label(f, 'DATE/TIME:', row)
+        self._dt_var = tk.StringVar()
+        readonly_entry(f, self._dt_var, row)
+        row += 1
 
         # Rack Number
-        self.rack_input = QLineEdit()
-        self.rack_input.setPlaceholderText("Scan barcode  (PR/### or MR/###)…")
-        self.rack_input.setFont(QFont("Segoe UI", 15))
-        self.rack_input.setMinimumHeight(50)
-        self.rack_input.returnPressed.connect(lambda: self.model_input.setFocus())
-        self.rack_input.textChanged.connect(self._force_upper)
-        lay.addLayout(self._row("RACK NUMBER:", self.rack_input))
+        form_label(f, 'RACK NUMBER:', row)
+        self._rack_var = tk.StringVar()
+        make_upper(self._rack_var)
+        self._rack_entry = text_entry(f, self._rack_var, row, font_size=14, ipady=6)
+        self._rack_entry.bind('<Return>', self._on_rack_entered)
+        row += 1
 
-        # Model
-        self.model_input = QLineEdit()
-        self.model_input.setPlaceholderText("Enter model name…")
-        self.model_input.setFont(QFont("Segoe UI", 13))
-        self.model_input.setMinimumHeight(40)
-        self.model_input.returnPressed.connect(lambda: self.qty_input.setFocus())
-        lay.addLayout(self._row("MODEL:", self.model_input))
+        # Model (auto-filled, readonly)
+        form_label(f, 'MODEL:', row)
+        self._model_var = tk.StringVar()
+        model_entry = tk.Entry(f, textvariable=self._model_var, state='readonly',
+                               font=('Segoe UI', 11), bg='#e7f5ff', fg='#1864ab',
+                               readonlybackground='#e7f5ff', relief='solid', bd=1)
+        model_entry.grid(row=row, column=1, sticky='ew', pady=3, ipady=4)
+        row += 1
 
-        # Quantity — plain text input, empty by default
-        self.qty_input = QLineEdit()
-        self.qty_input.setPlaceholderText("Quantity…")
-        self.qty_input.setValidator(QIntValidator(1, 10_000))
-        self.qty_input.setFont(QFont("Segoe UI", 13))
-        self.qty_input.setMinimumHeight(40)
-        self.qty_input.setFixedWidth(140)
-        self.qty_input.returnPressed.connect(lambda: self.inspector_input.setFocus())
-        qty_row = QHBoxLayout()
-        qty_row.addLayout(self._row("QUANTITY:", self.qty_input, stretch=False))
-        qty_row.addStretch()
-        lay.addLayout(qty_row)
+        # Quantity (auto-filled, readonly)
+        form_label(f, 'QUANTITY:', row)
+        self._qty_var = tk.StringVar()
+        qty_frame = ttk.Frame(f)
+        qty_frame.grid(row=row, column=1, sticky='w', pady=3)
+        qty_entry = tk.Entry(qty_frame, textvariable=self._qty_var, state='readonly',
+                             font=('Segoe UI', 11), width=12, bg='#e7f5ff', fg='#1864ab',
+                             readonlybackground='#e7f5ff', relief='solid', bd=1)
+        qty_entry.pack(side='left', ipady=4)
+        row += 1
 
         # Inspected By
-        self.inspector_input = QLineEdit()
-        self.inspector_input.setPlaceholderText("Inspector name or ID…")
-        self.inspector_input.setFont(QFont("Segoe UI", 13))
-        self.inspector_input.setMinimumHeight(40)
-        self.inspector_input.returnPressed.connect(self._on_scan)
-        lay.addLayout(self._row("INSPECTED BY:", self.inspector_input))
+        form_label(f, 'INSPECTED BY:', row)
+        self._inspector_var = tk.StringVar()
+        make_upper(self._inspector_var)
+        self._inspector_entry = text_entry(f, self._inspector_var, row)
+        self._inspector_entry.bind('<Return>', self._on_mark_ok)
+        row += 1
 
-        return frame
+        # Buttons
+        btn_frame = ttk.Frame(f)
+        btn_frame.grid(row=row, column=0, columnspan=2, sticky='ew', pady=(8, 2))
+        btn_frame.columnconfigure(0, weight=2)
+        btn_frame.columnconfigure(1, weight=2)
+        btn_frame.columnconfigure(2, weight=1)
 
-    @staticmethod
-    def _row(label_text: str, widget, stretch: bool = True) -> QHBoxLayout:
-        row = QHBoxLayout()
-        lbl = QLabel(label_text)
-        lbl.setFixedWidth(130)
-        lbl.setFont(QFont("Segoe UI", 11, QFont.Bold))
-        row.addWidget(lbl)
-        row.addWidget(widget, 1 if stretch else 0)
-        return row
+        colored_btn(btn_frame, 'MARK OK', 'success',
+                    self._on_mark_ok, font_size=12, pady=8).grid(
+            row=0, column=0, sticky='ew', padx=(0, 6))
 
-    def _build_action_row(self) -> QHBoxLayout:
-        row = QHBoxLayout()
-        self.scan_btn = QPushButton("MARK OK  →  ADD TO FG")
-        self.scan_btn.setMinimumHeight(52)
-        self.scan_btn.setFont(QFont("Segoe UI", 13, QFont.Bold))
-        self.scan_btn.setStyleSheet(
-            "background-color:#2f9e44;color:#ffffff;border-radius:5px;"
-        )
-        self.scan_btn.clicked.connect(self._on_scan)
-        row.addWidget(self.scan_btn)
+        colored_btn(btn_frame, 'MARK NOT OK', 'danger',
+                    self._on_mark_not_ok, font_size=12, pady=8).grid(
+            row=0, column=1, sticky='ew', padx=(0, 6))
 
-        self.undo_btn = QPushButton("Undo Last Scan")
-        self.undo_btn.setMinimumHeight(52)
-        self.undo_btn.setFont(QFont("Segoe UI", 11))
-        self.undo_btn.setStyleSheet(
-            "background-color:#e9ecef;color:#495057;border-radius:5px;border:1px solid #ced4da;"
-        )
-        self.undo_btn.setEnabled(False)
-        self.undo_btn.clicked.connect(self._on_undo)
-        row.addWidget(self.undo_btn)
-        return row
+        self._undo_btn = colored_btn(btn_frame, 'Undo Last', 'secondary',
+                                     self._on_undo, bold=False, pady=8,
+                                     state='disabled')
+        self._undo_btn.grid(row=0, column=2, sticky='ew')
+        row += 1
 
-    def _build_status_label(self) -> QLabel:
-        self.status_label = QLabel("")
-        self.status_label.setFont(QFont("Segoe UI", 12))
-        self.status_label.setMinimumHeight(32)
-        self.status_label.setAlignment(Qt.AlignCenter)
-        self.status_label.setWordWrap(True)
-        return self.status_label
+        # Status
+        self._sv, self._sl = status_label(f, row)
+        row += 1
 
-    # ── clock ────────────────────────────────────────────────────────────────
-
-    def _start_clock(self):
-        self._tick()
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._tick)
-        self._timer.start(1000)
+        # Pending widget
+        self._pending = PendingQCWidget(f)
+        self._pending.frame.grid(row=row, column=0, columnspan=2,
+                                  sticky='nsew', pady=(6, 0))
+        f.rowconfigure(row, weight=1)
 
     def _tick(self):
-        self.datetime_display.setText(now_ist_display())
+        self._dt_var.set(now_ist_display())
+        self.frame.after(1000, self._tick)
 
-    # ── scan ─────────────────────────────────────────────────────────────────
-
-    def _on_scan(self):
-        rack_number  = self.rack_input.text().strip().upper()
-        model        = self.model_input.text().strip().upper()
-        qty_text     = self.qty_input.text().strip()
-        inspected_by = self.inspector_input.text().strip().upper()
-
-        if not qty_text:
-            self.status_label.setStyleSheet("color:#c92a2a;font-weight:bold;")
-            self.status_label.setText("Quantity is required.")
-            self.qty_input.setFocus()
+    def _on_rack_entered(self, _=None):
+        rack = normalise_rack_number(self._rack_var.get())
+        if not rack:
             return
-        quantity = int(qty_text)
+        pending = database.get_pending_rack(rack)
+        if pending:
+            self._model_var.set(pending['model'])
+            self._qty_var.set(str(pending['quantity']))
+            self._set_status(
+                f"Rack {rack} found — {pending['model']}, qty {pending['quantity']}.",
+                'success')
+            self._inspector_entry.focus()
+        else:
+            self._model_var.set('')
+            self._qty_var.set('')
+            self._set_status(f"Rack {rack} is not in Pending for QC.", 'error')
 
-        # 1. Validate first — no DB write yet
-        check = validate_ok_scan(rack_number, model, quantity, inspected_by)
-        if not check.success:
-            color = STATUS_COLOR.get(check.status, "#212529")
-            self.status_label.setStyleSheet(f"color:{color};font-weight:bold;")
-            self.status_label.setText(check.message)
-            self.rack_input.setFocus()
+    def _validate_form(self):
+        """Returns (rack, pending, inspector) or None if validation fails."""
+        rack = normalise_rack_number(self._rack_var.get())
+        if not rack:
+            self._set_status('Rack Number is required.', 'error')
+            self._rack_entry.focus()
+            return None
+        pending = database.get_pending_rack(rack)
+        if not pending:
+            self._set_status(f"Rack {rack} is not in Pending for QC.", 'error')
+            self._rack_entry.focus()
+            return None
+        inspector = self._inspector_var.get().strip().upper()
+        if not inspector:
+            self._set_status('Inspected By is required.', 'error')
+            self._inspector_entry.focus()
+            return None
+        return rack, pending, inspector
+
+    def _on_mark_ok(self, _=None):
+        result = self._validate_form()
+        if not result:
             return
+        rack, pending, inspector = result
+        ok_scan_id = database.mark_qc_ok(
+            smt_handover_id=pending['id'],
+            rack_number=pending['rack_number'],
+            model=pending['model'],
+            quantity=pending['quantity'],
+            inspected_by=inspector,
+            pcb_ids=[],
+        )
+        self._last_action = ('OK', pending['id'], ok_scan_id)
+        self._undo_btn.config(state='normal')
+        self._set_status(f"Rack {rack} marked OK — added to Racks in FG.", 'success')
+        self._clear_form()
+        self._pending.refresh()
+        self._rack_entry.focus()
 
-        # 2. PCB sampling dialog
-        dlg = PCBSamplingDialog(rack_number, self)
-        if dlg.exec_() != PCBSamplingDialog.Accepted:
-            self.rack_input.setFocus()
+    def _on_mark_not_ok(self, _=None):
+        result = self._validate_form()
+        if not result:
             return
+        rack, pending, inspector = result
+        reason = self._ask_reason()
+        if reason is None:
+            self._rack_entry.focus()
+            return
+        database.mark_qc_not_ok(pending['id'], reason)
+        self._last_action = ('NOT_OK', pending['id'])
+        self._undo_btn.config(state='normal')
+        self._set_status(f"Rack {rack} marked NOT OK — returned to SMT.", 'warning')
+        self._clear_form()
+        self._pending.refresh()
+        self._rack_entry.focus()
 
-        # 3. Commit scan + PCB samples together
-        result = perform_ok_scan(rack_number, model, quantity, inspected_by, dlg.pcb_ids)
-        color = STATUS_COLOR.get(result.status, "#212529")
-        self.status_label.setStyleSheet(f"color:{color};font-weight:bold;")
-        self.status_label.setText(result.message)
+    def _ask_reason(self):
+        """Show a small dialog to collect the NOT OK reason. Returns str or None."""
+        dlg = tk.Toplevel(self.frame.winfo_toplevel())
+        dlg.title('NOT OK — Enter Reason')
+        dlg.resizable(False, False)
+        dlg.grab_set()
+        dlg.transient(self.frame.winfo_toplevel())
 
-        if result.success:
-            self._last_scan_id = result.scan_id
-            self.undo_btn.setEnabled(True)
-            self.rack_input.clear()
-            self.model_input.clear()
-            self.qty_input.clear()
-            self.inspector_input.clear()
-            self._active.refresh()
+        frm = ttk.Frame(dlg, padding=16)
+        frm.pack(fill='both', expand=True)
+        ttk.Label(frm, text='Reason for NOT OK:',
+                  font=('Segoe UI', 11, 'bold')).pack(anchor='w')
+        reason_var = tk.StringVar()
+        entry = ttk.Entry(frm, textvariable=reason_var,
+                          font=('Segoe UI', 12), width=38)
+        entry.pack(fill='x', pady=(6, 12), ipady=4)
 
-        self.rack_input.setFocus()
+        result = [None]
+
+        def _confirm(_=None):
+            r = reason_var.get().strip()
+            if not r:
+                return
+            result[0] = r.upper()
+            dlg.destroy()
+
+        def _cancel():
+            dlg.destroy()
+
+        entry.bind('<Return>', _confirm)
+        btn_row = ttk.Frame(frm)
+        btn_row.pack(fill='x')
+        from ui_helpers import colored_btn as cbtn
+        cbtn(btn_row, 'Cancel', 'secondary', _cancel,
+             bold=False, pady=5).pack(side='left', padx=(0, 8))
+        cbtn(btn_row, 'Confirm NOT OK', 'danger', _confirm,
+             pady=5).pack(side='left')
+
+        entry.focus()
+        dlg.wait_window()
+        return result[0]
 
     def _on_undo(self):
-        if self._last_scan_id is None:
+        if not self._last_action:
             return
-        reply = QMessageBox.question(
-            self, "Undo Last Scan",
-            "Remove the last OK scan and its PCB samples?",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
-        )
-        if reply != QMessageBox.Yes:
-            return
-        database.delete_ok_scan(self._last_scan_id)
-        self._last_scan_id = None
-        self.undo_btn.setEnabled(False)
-        self.status_label.setText("Last scan undone.")
-        self.status_label.setStyleSheet("color:#e67700;font-weight:bold;")
-        self._active.refresh()
+        action = self._last_action[0]
+        if action == 'OK':
+            _, smt_id, ok_scan_id = self._last_action
+            if ask_yes_no('Undo Last Action',
+                          'Undo the last OK scan? The rack will return to Pending for QC.'):
+                database.undo_qc_ok(smt_id, ok_scan_id)
+                self._set_status('Last OK scan undone. Rack returned to Pending for QC.', 'warning')
+        else:
+            _, smt_id = self._last_action
+            if ask_yes_no('Undo Last Action',
+                          'Undo the NOT OK decision? The rack will return to Pending for QC.'):
+                database.undo_qc_not_ok(smt_id)
+                self._set_status('NOT OK decision undone. Rack returned to Pending for QC.', 'warning')
 
-    # ── called by MainWindow on tab switch ───────────────────────────────────
+        self._last_action = None
+        self._undo_btn.config(state='disabled')
+        self._pending.refresh()
 
-    def _force_upper(self, text: str):
-        uppered = text.upper()
-        if uppered != text:
-            cursor = self.rack_input.cursorPosition()
-            self.rack_input.blockSignals(True)
-            self.rack_input.setText(uppered)
-            self.rack_input.setCursorPosition(cursor)
-            self.rack_input.blockSignals(False)
+    def _clear_form(self):
+        for v in (self._rack_var, self._model_var, self._qty_var, self._inspector_var):
+            v.set('')
+
+    def _set_status(self, msg, status):
+        self._sl.config(fg=STATUS_FG.get(status, '#212529'))
+        self._sv.set(msg)
 
     def on_activate(self):
-        self._active.refresh()
-        self.rack_input.setFocus()
-        self.rack_input.selectAll()
+        self._pending.refresh()
+        self._rack_entry.focus()

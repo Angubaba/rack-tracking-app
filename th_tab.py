@@ -1,208 +1,129 @@
-from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QFrame, QMessageBox,
-)
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QFont
+"""GOING TO TH tab — sends a rack from FG to Through-Hole."""
+import tkinter as tk
+from tkinter import ttk
 
 import database
 from logic import check_th_completion_lock
-from utils import now_ist_display
+from utils import now_ist_display, normalise_rack_number
 from active_racks_widget import ActiveRacksWidget
-from th_verify_dialog import THVerifyDialog
-
-STATUS_COLOR = {
-    "success": "#2f9e44",
-    "warning": "#e67700",
-    "error":   "#c92a2a",
-}
+from ui_helpers import (
+    BG, colored_btn, form_label, readonly_entry, text_entry,
+    status_label, make_upper, STATUS_FG, ask_yes_no,
+)
 
 
-class THTab(QWidget):
-    def __init__(self):
-        super().__init__()
+class THTab:
+    def __init__(self, parent):
+        self.frame = ttk.Frame(parent, padding=14)
+        self.frame.columnconfigure(1, weight=1)
         self._last_th_scan_id = None
-        self._setup_ui()
-        self._start_clock()
+        self._build()
+        self._tick()
 
-    # ── UI ───────────────────────────────────────────────────────────────────
+    def _build(self):
+        f = self.frame
+        row = 0
 
-    def _setup_ui(self):
-        root = QVBoxLayout(self)
-        root.setSpacing(10)
-        root.setContentsMargins(16, 14, 16, 14)
-
-        root.addWidget(self._build_form())
-        root.addWidget(self._build_status_label())
-
-        self._active = ActiveRacksWidget()
-        root.addWidget(self._active)
-
-    def _build_form(self) -> QFrame:
-        frame = QFrame()
-        lay = QVBoxLayout(frame)
-        lay.setSpacing(10)
-        lay.setContentsMargins(0, 0, 0, 0)
-
-        # Date/Time (read-only clock)
-        self.datetime_display = QLineEdit()
-        self.datetime_display.setReadOnly(True)
-        self.datetime_display.setFont(QFont("Segoe UI", 13))
-        self.datetime_display.setMinimumHeight(40)
-        self.datetime_display.setStyleSheet(
-            "QLineEdit{background-color:#e7f5ff;color:#1864ab;"
-            "border:1px solid #a5d8ff;border-radius:4px;padding:4px 8px;}"
-        )
-        lay.addLayout(self._row("DATE/TIME:", self.datetime_display))
+        # Date/Time
+        form_label(f, 'DATE/TIME:', row)
+        self._dt_var = tk.StringVar()
+        readonly_entry(f, self._dt_var, row)
+        row += 1
 
         # Rack Number
-        self.rack_input = QLineEdit()
-        self.rack_input.setPlaceholderText("Scan barcode of rack going to TH…")
-        self.rack_input.setFont(QFont("Segoe UI", 15))
-        self.rack_input.setMinimumHeight(50)
-        self.rack_input.returnPressed.connect(self._on_scan)
-        self.rack_input.textChanged.connect(self._force_upper)
-        lay.addLayout(self._row("RACK NUMBER:", self.rack_input))
+        form_label(f, 'RACK NUMBER:', row)
+        self._rack_var = tk.StringVar()
+        make_upper(self._rack_var)
+        self._rack_entry = text_entry(f, self._rack_var, row, font_size=14, ipady=6)
+        self._rack_entry.bind('<Return>', self._on_scan)
+        row += 1
 
-        btn_row = QHBoxLayout()
+        # Buttons
+        btn_frame = ttk.Frame(f)
+        btn_frame.grid(row=row, column=0, columnspan=2, sticky='ew', pady=(8, 2))
+        btn_frame.columnconfigure(0, weight=2)
+        btn_frame.columnconfigure(1, weight=1)
 
-        send_btn = QPushButton("SEND TO TH")
-        send_btn.setMinimumHeight(52)
-        send_btn.setFont(QFont("Segoe UI", 13, QFont.Bold))
-        send_btn.setStyleSheet(
-            "background-color:#1971c2;color:#ffffff;border-radius:5px;"
-        )
-        send_btn.clicked.connect(self._on_scan)
-        btn_row.addWidget(send_btn)
+        colored_btn(btn_frame, 'SEND TO TH', 'primary',
+                    self._on_scan, font_size=12, pady=8).grid(
+            row=0, column=0, sticky='ew', padx=(0, 6))
 
-        self.undo_btn = QPushButton("Undo Last Scan")
-        self.undo_btn.setMinimumHeight(52)
-        self.undo_btn.setFont(QFont("Segoe UI", 11))
-        self.undo_btn.setStyleSheet(
-            "background-color:#e9ecef;color:#495057;border-radius:5px;border:1px solid #ced4da;"
-        )
-        self.undo_btn.setEnabled(False)
-        self.undo_btn.clicked.connect(self._on_undo)
-        btn_row.addWidget(self.undo_btn)
+        self._undo_btn = colored_btn(btn_frame, 'Undo Last Scan', 'secondary',
+                                     self._on_undo, bold=False, pady=8,
+                                     state='disabled')
+        self._undo_btn.grid(row=0, column=1, sticky='ew')
+        row += 1
 
-        lay.addLayout(btn_row)
+        # Status
+        self._sv, self._sl = status_label(f, row)
+        row += 1
 
-        return frame
-
-    @staticmethod
-    def _row(label_text: str, widget, stretch: bool = True) -> QHBoxLayout:
-        row = QHBoxLayout()
-        lbl = QLabel(label_text)
-        lbl.setFixedWidth(130)
-        lbl.setFont(QFont("Segoe UI", 11, QFont.Bold))
-        row.addWidget(lbl)
-        row.addWidget(widget, 1 if stretch else 0)
-        return row
-
-    def _build_status_label(self) -> QLabel:
-        self.status_label = QLabel("")
-        self.status_label.setFont(QFont("Segoe UI", 12))
-        self.status_label.setMinimumHeight(32)
-        self.status_label.setAlignment(Qt.AlignCenter)
-        self.status_label.setWordWrap(True)
-        return self.status_label
-
-    # ── clock ────────────────────────────────────────────────────────────────
-
-    def _start_clock(self):
-        self._tick()
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._tick)
-        self._timer.start(1000)
+        # Active racks widget
+        self._active = ActiveRacksWidget(f)
+        self._active.frame.grid(row=row, column=0, columnspan=2,
+                                 sticky='nsew', pady=(6, 0))
+        f.rowconfigure(row, weight=1)
 
     def _tick(self):
-        self.datetime_display.setText(now_ist_display())
+        self._dt_var.set(now_ist_display())
+        self.frame.after(1000, self._tick)
 
-    # ── scan ─────────────────────────────────────────────────────────────────
-
-    def _on_scan(self):
-        rack_number = self.rack_input.text().strip().upper()
-        if not rack_number:
-            self._set_status("Rack Number is required.", "error")
+    def _on_scan(self, _=None):
+        rack = normalise_rack_number(self._rack_var.get())
+        if not rack:
+            self._set_status('Rack Number is required.', 'error')
             return
 
-        ok_scan = database.get_active_rack(rack_number)
+        ok_scan = database.get_active_rack(rack)
         if not ok_scan:
             self._set_status(
-                f"Rack {rack_number} is not in FG. Scan it as OK first.",
-                "error",
-            )
-            self.rack_input.setFocus()
+                f"Rack {rack} is not in FG. Scan it as OK first.", 'error')
+            self._rack_entry.focus()
             return
 
-        # ── completion lock (TH tab only, independent of OK duplicate lock) ──
-        lock = check_th_completion_lock(rack_number)
+        lock = check_th_completion_lock(rack)
         if lock:
-            from PyQt5.QtWidgets import QMessageBox
-            reply = QMessageBox.question(
-                self, "Recent TH Lock", lock.message,
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No,
-            )
-            if reply != QMessageBox.Yes:
-                self.rack_input.setFocus()
+            if not ask_yes_no('Recent TH Lock', lock.message):
+                self._rack_entry.focus()
                 return
 
-        # Show verification dialog
-        dlg = THVerifyDialog(ok_scan, self)
-        if dlg.exec_():
-            th_id = database.insert_th_scan(
-                ok_scan_id   = ok_scan["id"],
-                rack_number  = ok_scan["rack_number"],
-                model        = ok_scan["model"],
-                quantity     = ok_scan["quantity"],
-                inspected_by = ok_scan["inspected_by"],
-                taken_by     = dlg.taken_by,
-            )
-            self._last_th_scan_id = th_id
-            self.undo_btn.setEnabled(True)
-            self._set_status(
-                f"Rack {rack_number} sent to TH. Taken by: {dlg.taken_by}",
-                "success",
-            )
-            self.rack_input.clear()
-            self._active.refresh()
+        from th_verify_dialog import show_th_verify_dialog
+        taken_by = show_th_verify_dialog(ok_scan, self.frame.winfo_toplevel())
+        if not taken_by:
+            self._rack_entry.focus()
+            return
 
-        self.rack_input.setFocus()
+        th_id = database.insert_th_scan(
+            ok_scan_id=ok_scan['id'],
+            rack_number=ok_scan['rack_number'],
+            model=ok_scan['model'],
+            quantity=ok_scan['quantity'],
+            inspected_by=ok_scan['inspected_by'],
+            taken_by=taken_by,
+        )
+        self._last_th_scan_id = th_id
+        self._undo_btn.config(state='normal')
+        self._set_status(
+            f"Rack {rack} sent to TH. Taken by: {taken_by}", 'success')
+        self._rack_var.set('')
+        self._active.refresh()
+        self._rack_entry.focus()
 
     def _on_undo(self):
         if self._last_th_scan_id is None:
             return
-        reply = QMessageBox.question(
-            self, "Undo Last Scan",
-            "Remove the last TH scan? The rack will return to active racks.",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
-        )
-        if reply != QMessageBox.Yes:
-            return
-        database.delete_th_scan(self._last_th_scan_id)
-        self._last_th_scan_id = None
-        self.undo_btn.setEnabled(False)
-        self._set_status("Last TH scan undone. Rack is active again.", "warning")
-        self._active.refresh()
+        if ask_yes_no('Undo Last Scan',
+                      'Remove the last TH scan? The rack will return to active racks.'):
+            database.delete_th_scan(self._last_th_scan_id)
+            self._last_th_scan_id = None
+            self._undo_btn.config(state='disabled')
+            self._set_status('Last TH scan undone. Rack is active again.', 'warning')
+            self._active.refresh()
 
-    def _set_status(self, message: str, status: str):
-        color = STATUS_COLOR.get(status, "#cdd6f4")
-        self.status_label.setStyleSheet(f"color:{color};font-weight:bold;")
-        self.status_label.setText(message)
-
-    # ── called by MainWindow on tab switch ───────────────────────────────────
-
-    def _force_upper(self, text: str):
-        uppered = text.upper()
-        if uppered != text:
-            cursor = self.rack_input.cursorPosition()
-            self.rack_input.blockSignals(True)
-            self.rack_input.setText(uppered)
-            self.rack_input.setCursorPosition(cursor)
-            self.rack_input.blockSignals(False)
+    def _set_status(self, msg, status):
+        self._sl.config(fg=STATUS_FG.get(status, '#212529'))
+        self._sv.set(msg)
 
     def on_activate(self):
         self._active.refresh()
-        self.rack_input.setFocus()
-        self.rack_input.selectAll()
+        self._rack_entry.focus()

@@ -23,6 +23,12 @@ def now_ist_display() -> str:
     return to_ist(datetime.now(timezone.utc).isoformat())
 
 
+def normalise_rack_number(rack_id: str) -> str:
+    """Remove ALL whitespace (spaces, newlines, tabs, CR) then uppercase."""
+    import re
+    return re.sub(r'\s+', '', rack_id).upper()
+
+
 def validate_rack_number(rack_id: str) -> bool:
     """Return True if rack number matches PR/XXX or MR/XXX (XXX = digits)."""
     return bool(RACK_PATTERN.match(rack_id))

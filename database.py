@@ -30,13 +30,27 @@ def _connect() -> sqlite3.Connection:
 def init_db() -> None:
     with _connect() as conn:
         conn.execute("""
+            CREATE TABLE IF NOT EXISTS smt_handovers (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                rack_number  TEXT    NOT NULL,
+                model        TEXT    NOT NULL,
+                quantity     INTEGER NOT NULL,
+                smt_operator TEXT    NOT NULL,
+                line         TEXT    NOT NULL DEFAULT '',
+                created_at   TEXT    NOT NULL,
+                status       TEXT    NOT NULL DEFAULT 'PENDING',
+                processed_at TEXT
+            )
+        """)
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS ok_scans (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                rack_number   TEXT    NOT NULL,
-                model         TEXT    NOT NULL,
-                quantity      INTEGER NOT NULL,
-                inspected_by  TEXT    NOT NULL,
-                created_at    TEXT    NOT NULL
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                rack_number      TEXT    NOT NULL,
+                model            TEXT    NOT NULL,
+                quantity         INTEGER NOT NULL,
+                inspected_by     TEXT    NOT NULL,
+                created_at       TEXT    NOT NULL,
+                smt_handover_id  INTEGER REFERENCES smt_handovers(id)
             )
         """)
         conn.execute("""
@@ -58,8 +72,22 @@ def init_db() -> None:
                 pcb_id      TEXT    NOT NULL
             )
         """)
+        # Migrations for schema additions
+        for migration in [
+            "ALTER TABLE ok_scans ADD COLUMN smt_handover_id INTEGER REFERENCES smt_handovers(id)",
+            "ALTER TABLE smt_handovers ADD COLUMN line TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE smt_handovers ADD COLUMN not_ok_reason TEXT NOT NULL DEFAULT ''",
+        ]:
+            try:
+                conn.execute(migration)
+            except Exception:
+                pass  # Column already exists
+
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_smt_rack   ON smt_handovers(rack_number)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_smt_status ON smt_handovers(status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ok_rack    ON ok_scans(rack_number)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ok_time    ON ok_scans(created_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ok_smt_id  ON ok_scans(smt_handover_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_th_ok_id   ON th_scans(ok_scan_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_pcb_ok_id  ON pcb_samples(ok_scan_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_th_rack    ON th_scans(rack_number)")
@@ -234,3 +262,215 @@ def get_all_pcb_ids_for_rack(rack_number: str) -> set:
             WHERE o.rack_number = ?
         """, (rack_number,)).fetchall()
     return {r["pcb_id"] for r in rows}
+
+
+# ── SMT Handovers ─────────────────────────────────────────────────────────────
+
+def insert_smt_handover(rack_number: str, model: str, quantity: int,
+                        smt_operator: str, line: str = "") -> int:
+    now = datetime.now(timezone.utc).isoformat()
+    with _connect() as conn:
+        cur = conn.execute(
+            "INSERT INTO smt_handovers"
+            " (rack_number, model, quantity, smt_operator, line, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (rack_number, model, quantity, smt_operator, line, now),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def get_pending_for_qc() -> list:
+    """All SMT handovers with status PENDING, oldest first."""
+    with _connect() as conn:
+        return conn.execute(
+            "SELECT * FROM smt_handovers WHERE status = 'PENDING' ORDER BY created_at ASC"
+        ).fetchall()
+
+
+def get_pending_rack(rack_number: str):
+    """Return the PENDING smt_handover for a rack, or None."""
+    with _connect() as conn:
+        return conn.execute(
+            "SELECT * FROM smt_handovers WHERE rack_number = ? AND status = 'PENDING' LIMIT 1",
+            (rack_number,),
+        ).fetchone()
+
+
+def mark_qc_ok(
+    smt_handover_id: int, rack_number: str, model: str,
+    quantity: int, inspected_by: str, pcb_ids: list,
+) -> int:
+    """Mark an SMT handover as OK, create the linked ok_scan, insert PCB samples."""
+    now = datetime.now(timezone.utc).isoformat()
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE smt_handovers SET status='OK', processed_at=? WHERE id=?",
+            (now, smt_handover_id),
+        )
+        cur = conn.execute(
+            "INSERT INTO ok_scans"
+            " (rack_number, model, quantity, inspected_by, created_at, smt_handover_id)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (rack_number, model, quantity, inspected_by, now, smt_handover_id),
+        )
+        ok_scan_id = cur.lastrowid
+        if pcb_ids:
+            conn.executemany(
+                "INSERT INTO pcb_samples (ok_scan_id, pcb_id) VALUES (?, ?)",
+                [(ok_scan_id, pid) for pid in pcb_ids],
+            )
+        conn.commit()
+        return ok_scan_id
+
+
+def mark_qc_not_ok(smt_handover_id: int, reason: str = "") -> None:
+    """Mark an SMT handover as NOT_OK (rack returned to SMT)."""
+    now = datetime.now(timezone.utc).isoformat()
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE smt_handovers SET status='NOT_OK', processed_at=?, not_ok_reason=? WHERE id=?",
+            (now, reason, smt_handover_id),
+        )
+        conn.commit()
+
+
+def undo_qc_ok(smt_handover_id: int, ok_scan_id: int) -> None:
+    """Undo a QC OK decision: delete ok_scan and reset smt_handover to PENDING."""
+    with _connect() as conn:
+        conn.execute("DELETE FROM pcb_samples WHERE ok_scan_id = ?", (ok_scan_id,))
+        conn.execute("DELETE FROM th_scans   WHERE ok_scan_id = ?", (ok_scan_id,))
+        conn.execute("DELETE FROM ok_scans   WHERE id = ?",         (ok_scan_id,))
+        conn.execute(
+            "UPDATE smt_handovers SET status='PENDING', processed_at=NULL WHERE id=?",
+            (smt_handover_id,),
+        )
+        conn.commit()
+
+
+def undo_qc_not_ok(smt_handover_id: int) -> None:
+    """Undo a QC NOT OK decision: reset smt_handover to PENDING."""
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE smt_handovers SET status='PENDING', processed_at=NULL WHERE id=?",
+            (smt_handover_id,),
+        )
+        conn.commit()
+
+
+def delete_smt_handover(smt_id: int) -> None:
+    """Delete an SMT handover and all linked ok_scan / pcb_samples / th_scan."""
+    with _connect() as conn:
+        ok_row = conn.execute(
+            "SELECT id FROM ok_scans WHERE smt_handover_id = ?", (smt_id,)
+        ).fetchone()
+        if ok_row:
+            conn.execute("DELETE FROM pcb_samples WHERE ok_scan_id = ?", (ok_row["id"],))
+            conn.execute("DELETE FROM th_scans   WHERE ok_scan_id = ?", (ok_row["id"],))
+            conn.execute("DELETE FROM ok_scans   WHERE id = ?",         (ok_row["id"],))
+        conn.execute("DELETE FROM smt_handovers WHERE id = ?", (smt_id,))
+        conn.commit()
+
+
+def get_smt_handover_by_id(smt_id: int):
+    with _connect() as conn:
+        return conn.execute(
+            "SELECT * FROM smt_handovers WHERE id = ?", (smt_id,)
+        ).fetchone()
+
+
+# ── Cycle lookup ─────────────────────────────────────────────────────────────
+
+def get_cycles(
+    rack_number: Optional[str] = None,
+    utc_from: Optional[str] = None,
+    utc_to: Optional[str] = None,
+    model: Optional[str] = None,
+) -> list:
+    """
+    Return all rack cycles (SMT → QC → TH) as dicts, newest first.
+    Also includes legacy ok_scans that have no SMT handover.
+
+    Each dict has:
+      cycle_type, rack_number, model, quantity,
+      smt_id, smt_operator, smt_time,
+      qc_result ('PENDING'|'OK'|'NOT_OK'|'LEGACY'),
+      ok_scan_id, qc_inspector, qc_time,
+      th_id, th_taken_by, th_time,
+      sort_time (for ordering)
+    """
+    results = []
+
+    def _wheres_params(alias_time: str, alias_rack: str, alias_model: str):
+        wheres, params = ["1=1"], []
+        if rack_number:
+            wheres.append(f"{alias_rack} = ?")
+            params.append(rack_number)
+        if model:
+            wheres.append(f"UPPER({alias_model}) LIKE UPPER(?)")
+            params.append(f"%{model}%")
+        if utc_from:
+            wheres.append(f"{alias_time} >= ?")
+            params.append(utc_from)
+        if utc_to:
+            wheres.append(f"{alias_time} <= ?")
+            params.append(utc_to)
+        return " AND ".join(wheres), params
+
+    with _connect() as conn:
+        # ── New cycles (anchored to SMT handover time) ──────────────────────
+        where, params = _wheres_params("sh.created_at", "sh.rack_number", "sh.model")
+        rows = conn.execute(f"""
+            SELECT
+                sh.id          AS smt_id,
+                sh.rack_number, sh.model, sh.quantity,
+                sh.smt_operator, sh.line, sh.created_at AS smt_time,
+                sh.status      AS qc_result, sh.not_ok_reason,
+                os.id          AS ok_scan_id,
+                os.inspected_by AS qc_inspector,
+                os.created_at  AS qc_time,
+                ts.id          AS th_id,
+                ts.taken_by    AS th_taken_by,
+                ts.created_at  AS th_time
+            FROM smt_handovers sh
+            LEFT JOIN ok_scans os ON os.smt_handover_id = sh.id
+            LEFT JOIN th_scans ts ON ts.ok_scan_id = os.id
+            WHERE {where}
+            ORDER BY sh.created_at DESC
+        """, params).fetchall()
+        for r in rows:
+            d = dict(r)
+            d["cycle_type"] = "smt"
+            d["sort_time"]  = d["smt_time"] or ""
+            results.append(d)
+
+        # ── Legacy cycles (ok_scans with no SMT handover) ───────────────────
+        where_leg, params_leg = _wheres_params("os.created_at", "os.rack_number", "os.model")
+        leg_rows = conn.execute(f"""
+            SELECT
+                os.id          AS ok_scan_id,
+                os.rack_number, os.model, os.quantity,
+                os.inspected_by AS qc_inspector,
+                os.created_at  AS qc_time,
+                ts.id          AS th_id,
+                ts.taken_by    AS th_taken_by,
+                ts.created_at  AS th_time
+            FROM ok_scans os
+            LEFT JOIN th_scans ts ON ts.ok_scan_id = os.id
+            WHERE os.smt_handover_id IS NULL AND {where_leg}
+            ORDER BY os.created_at DESC
+        """, params_leg).fetchall()
+        for r in leg_rows:
+            d = dict(r)
+            d["cycle_type"]    = "legacy"
+            d["smt_id"]        = None
+            d["smt_operator"]  = ""
+            d["line"]          = ""
+            d["smt_time"]      = None
+            d["qc_result"]     = "LEGACY"
+            d["not_ok_reason"] = ""
+            d["sort_time"]    = d["qc_time"] or ""
+            results.append(d)
+
+    results.sort(key=lambda x: x["sort_time"], reverse=True)
+    return results
