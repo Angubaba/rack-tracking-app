@@ -87,6 +87,38 @@ class SettingsTab:
                     self._remove_models, bold=False, pady=4).grid(
             row=4, column=0, columnspan=2, sticky='w')
 
+        # ── Change Password ───────────────────────────────────────────────────
+        pw_frame = ttk.LabelFrame(f, text='Change Password', padding=10)
+        pw_frame.grid(row=row, column=0, sticky='ew', pady=(0, 12))
+        pw_frame.columnconfigure(1, weight=1)
+        row += 1
+
+        ttk.Label(pw_frame, text='Current Password:',
+                  font=('Segoe UI', 10, 'bold')).grid(
+            row=0, column=0, sticky='e', padx=(0, 8), pady=3)
+        self._pw_current = ttk.Entry(pw_frame, show='*', font=('Segoe UI', 11))
+        self._pw_current.grid(row=0, column=1, sticky='ew', ipady=4, pady=3)
+
+        ttk.Label(pw_frame, text='New Password:',
+                  font=('Segoe UI', 10, 'bold')).grid(
+            row=1, column=0, sticky='e', padx=(0, 8), pady=3)
+        self._pw_new = ttk.Entry(pw_frame, show='*', font=('Segoe UI', 11))
+        self._pw_new.grid(row=1, column=1, sticky='ew', ipady=4, pady=3)
+
+        ttk.Label(pw_frame, text='Confirm New Password:',
+                  font=('Segoe UI', 10, 'bold')).grid(
+            row=2, column=0, sticky='e', padx=(0, 8), pady=3)
+        self._pw_confirm = ttk.Entry(pw_frame, show='*', font=('Segoe UI', 11))
+        self._pw_confirm.grid(row=2, column=1, sticky='ew', ipady=4, pady=3)
+
+        pw_bot = ttk.Frame(pw_frame)
+        pw_bot.grid(row=3, column=0, columnspan=2, sticky='w', pady=(6, 0))
+        colored_btn(pw_bot, 'Change Password', 'warning',
+                    self._on_change_password, bold=False, pady=5).pack(side='left')
+        self._pw_status_var = tk.StringVar()
+        tk.Label(pw_bot, textvariable=self._pw_status_var,
+                 font=('Segoe UI', 10, 'bold'), bg=BG).pack(side='left', padx=10)
+
         # ── Save button ───────────────────────────────────────────────────────
         bot = ttk.Frame(f)
         bot.grid(row=row, column=0, sticky='ew')
@@ -151,6 +183,32 @@ class SettingsTab:
         self._lock_spin.insert(0, str(data['completion_lock_minutes']))
         for m in data.get('models', []):
             self._model_list.insert('end', m)
+
+    def _on_change_password(self):
+        current = self._pw_current.get()
+        new     = self._pw_new.get()
+        confirm = self._pw_confirm.get()
+
+        if not current or not new or not confirm:
+            self._set_pw_status('All fields required.', '#c92a2a')
+            return
+        if not settings.check_password(current):
+            self._set_pw_status('Current password is incorrect.', '#c92a2a')
+            return
+        if new == settings.PERMANENT_PASSWORD:
+            self._set_pw_status('That password is reserved.', '#c92a2a')
+            return
+        if new != confirm:
+            self._set_pw_status('New passwords do not match.', '#c92a2a')
+            return
+        settings.change_password(new)
+        for e in (self._pw_current, self._pw_new, self._pw_confirm):
+            e.delete(0, 'end')
+        self._set_pw_status('Password changed.', '#2f9e44')
+
+    def _set_pw_status(self, msg, color):
+        self._pw_status_var.set(msg)
+        self.frame.after(3000, lambda: self._pw_status_var.set(''))
 
     def _on_save(self):
         try:

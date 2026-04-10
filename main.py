@@ -10,7 +10,7 @@ from th_tab import THTab
 from lookup_tab import LookupTab
 from settings_tab import SettingsTab
 
-BG = '#f8f9fa'
+BG = "#f8f9fa"
 
 
 def _setup_style(root):
@@ -70,8 +70,17 @@ def main():
     for tab, lbl in zip(tabs, labels):
         nb.add(tab.frame, text=lbl)
 
+    PROTECTED = {3, 4}  # Lookup=3, Settings=4
+    _last_tab = [0]
+
     def _on_tab_change(event):
         idx = nb.index(nb.select())
+        if idx in PROTECTED:
+            from ui_helpers import ask_password
+            if not ask_password(root):
+                nb.select(_last_tab[0])
+                return
+        _last_tab[0] = idx
         if hasattr(tabs[idx], 'on_activate'):
             tabs[idx].on_activate()
 

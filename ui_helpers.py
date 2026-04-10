@@ -111,6 +111,51 @@ def fill_tree(tree, rows, key_fn):
         tree.insert('', 'end', values=key_fn(row), tags=(tag,))
 
 
+def ask_password(parent, title='Enter Password'):
+    """Show a password prompt. Returns True if correct password entered, False otherwise."""
+    import settings as _settings
+    dlg = tk.Toplevel(parent)
+    dlg.title(title)
+    dlg.resizable(False, False)
+    dlg.grab_set()
+    dlg.transient(parent)
+
+    frm = ttk.Frame(dlg, padding=16)
+    frm.pack(fill='both', expand=True)
+    ttk.Label(frm, text='Password:', font=('Segoe UI', 11, 'bold')).pack(anchor='w')
+    pw_var = tk.StringVar()
+    entry = ttk.Entry(frm, textvariable=pw_var, show='*', font=('Segoe UI', 12), width=22)
+    entry.pack(fill='x', pady=(6, 4), ipady=4)
+
+    err_var = tk.StringVar()
+    tk.Label(frm, textvariable=err_var, font=('Segoe UI', 10),
+             fg='#c92a2a', bg=BG).pack(anchor='w')
+
+    result = [False]
+
+    def _confirm(_=None):
+        if _settings.check_password(pw_var.get()):
+            result[0] = True
+            dlg.destroy()
+        else:
+            err_var.set('Incorrect password.')
+            pw_var.set('')
+            entry.focus()
+
+    def _cancel():
+        dlg.destroy()
+
+    entry.bind('<Return>', _confirm)
+    btn_row = ttk.Frame(frm)
+    btn_row.pack(fill='x', pady=(8, 0))
+    colored_btn(btn_row, 'Cancel', 'secondary', _cancel, bold=False, pady=5).pack(side='left', padx=(0, 8))
+    colored_btn(btn_row, 'OK', 'primary', _confirm, pady=5).pack(side='left')
+
+    entry.focus()
+    dlg.wait_window()
+    return result[0]
+
+
 def ask_yes_no(title, message):
     from tkinter import messagebox
     return messagebox.askyesno(title, message)
