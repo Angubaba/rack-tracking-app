@@ -9,7 +9,7 @@ from utils import now_ist_display, normalise_rack_number
 from pending_qc_widget import PendingQCWidget
 from ui_helpers import (
     BG, colored_btn, form_label, readonly_entry, text_entry,
-    status_label, make_upper, STATUS_FG,
+    status_label, make_upper, STATUS_FG, scanner_guard,
 )
 
 
@@ -36,7 +36,7 @@ class SMTTab:
         form_label(f, 'RACK NUMBER:', row)
         self._rack_var = tk.StringVar()
         self._rack_entry = text_entry(f, self._rack_var, row, font_size=14, ipady=6)
-        self._rack_entry.bind('<Return>', lambda e: self._line_entry.focus())
+        self._rack_entry.bind('<Return>', self._on_rack_scanned)
         row += 1
 
         # Line
@@ -113,6 +113,13 @@ class SMTTab:
         self._pending.frame.grid(row=row, column=0, columnspan=2,
                                   sticky='nsew', pady=(6, 0))
         f.rowconfigure(row, weight=1)
+
+    def _on_rack_scanned(self, _=None):
+        scanner_guard(self.frame, [
+            self._line_entry, self._model_entry,
+            self._qty_entry, self._op_entry,
+        ])
+        self._line_entry.focus()
 
     # ── Autocomplete ──────────────────────────────────────────────────────────
 

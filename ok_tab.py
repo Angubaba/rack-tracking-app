@@ -7,7 +7,7 @@ from utils import now_ist_display, normalise_rack_number
 from pending_qc_widget import PendingQCWidget
 from ui_helpers import (
     BG, colored_btn, form_label, readonly_entry, text_entry,
-    status_label, make_upper, STATUS_FG, ask_yes_no, show_warning,
+    status_label, make_upper, STATUS_FG, ask_yes_no, show_warning, scanner_guard,
 )
 
 
@@ -34,7 +34,7 @@ class OKTab:
         self._rack_var = tk.StringVar()
         make_upper(self._rack_var)
         self._rack_entry = text_entry(f, self._rack_var, row, font_size=14, ipady=6)
-        self._rack_entry.bind('<Return>', self._on_rack_entered)
+        self._rack_entry.bind('<Return>', self._on_rack_scanned)
         row += 1
 
         # Model (auto-filled, readonly)
@@ -99,6 +99,10 @@ class OKTab:
     def _tick(self):
         self._dt_var.set(now_ist_display())
         self.frame.after(1000, self._tick)
+
+    def _on_rack_scanned(self, _=None):
+        scanner_guard(self.frame, [self._inspector_entry])
+        self._on_rack_entered()
 
     def _on_rack_entered(self, _=None):
         rack = normalise_rack_number(self._rack_var.get())

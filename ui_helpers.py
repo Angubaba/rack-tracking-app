@@ -70,6 +70,35 @@ def make_upper(var):
     pass
 
 
+def scanner_guard(widget, entries, block_ms=600):
+    """
+    Call this after a rack-entry <Return> fires to block scanner overflow.
+
+    The scanner (Newland etc.) sometimes re-sends the barcode after the first
+    Return moves focus to the next field.  This briefly sets every entry in
+    `entries` to readonly so the overflow characters are discarded, then
+    restores them after `block_ms` milliseconds.
+
+    Usage:
+        rack_entry.bind('<Return>', lambda e: scanner_guard(
+            rack_entry, [line_entry, model_entry, qty_entry, op_entry]))
+    """
+    for e in entries:
+        try:
+            e.config(state='readonly')
+        except Exception:
+            pass
+
+    def _restore():
+        for e in entries:
+            try:
+                e.config(state='normal')
+            except Exception:
+                pass
+
+    widget.after(block_ms, _restore)
+
+
 def scrolled_tree(parent, columns, headings, col_widths=None,
                   stretch_cols=None, height=8, selectmode='browse'):
     """

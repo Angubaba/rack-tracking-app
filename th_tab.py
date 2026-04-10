@@ -8,7 +8,7 @@ from utils import now_ist_display, normalise_rack_number
 from active_racks_widget import ActiveRacksWidget
 from ui_helpers import (
     BG, colored_btn, form_label, readonly_entry, text_entry,
-    status_label, make_upper, STATUS_FG, ask_yes_no,
+    status_label, make_upper, STATUS_FG, ask_yes_no, scanner_guard,
 )
 
 
@@ -35,7 +35,7 @@ class THTab:
         self._rack_var = tk.StringVar()
         make_upper(self._rack_var)
         self._rack_entry = text_entry(f, self._rack_var, row, font_size=14, ipady=6)
-        self._rack_entry.bind('<Return>', self._on_scan)
+        self._rack_entry.bind('<Return>', self._on_rack_scanned)
         row += 1
 
         # Buttons
@@ -67,6 +67,10 @@ class THTab:
     def _tick(self):
         self._dt_var.set(now_ist_display())
         self.frame.after(1000, self._tick)
+
+    def _on_rack_scanned(self, _=None):
+        scanner_guard(self.frame, [])
+        self._on_scan()
 
     def _on_scan(self, _=None):
         rack = normalise_rack_number(self._rack_var.get())
