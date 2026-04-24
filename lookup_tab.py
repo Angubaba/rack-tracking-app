@@ -322,6 +322,9 @@ class LookupTab:
         cycle = self._selected_cycle()
         if not cycle:
             return
+        from ui_helpers import ask_password
+        if not ask_password(self.frame.winfo_toplevel()):
+            return
         from edit_dialog import show_edit_dialog
         if show_edit_dialog(dict(cycle), self.frame.winfo_toplevel()):
             self._on_search()
@@ -329,6 +332,9 @@ class LookupTab:
     def _on_delete(self):
         cycle = self._selected_cycle()
         if not cycle:
+            return
+        from ui_helpers import ask_password
+        if not ask_password(self.frame.winfo_toplevel()):
             return
         rack = cycle['rack_number']
         msg = (f"Delete the full cycle for rack {rack}?\n"
@@ -362,10 +368,31 @@ class LookupTab:
         except Exception as exc:
             show_error('Export Failed', str(exc))
 
+    def _window_status(self, cycle, utc_from, utc_to):
+        """Return the cycle's effective status WITHIN the search window.
+
+        TH that happened outside the window is ignored for summary purposes —
+        the rack is treated as In FG for that window.
+        """
+        qr = cycle['qc_result']
+        if qr == 'NOT_OK':
+            return 'NOT_OK'
+        th_time = cycle.get('th_time') or ''
+        qc_time = cycle.get('qc_time') or ''
+        th_in_window = bool(th_time and utc_from <= th_time <= utc_to)
+        if th_in_window:
+            return 'TH'
+        if qr in ('OK', 'LEGACY'):
+            return 'OK_FG'   # QC done in/before window, TH outside window
+        return 'PENDING'
+
     def _write_excel(self, path):
         import openpyxl
         from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
         from openpyxl.utils import get_column_letter
+
+        utc_from = _parse_ist_input(self._from_var.get()) or ''
+        utc_to   = _parse_ist_input(self._to_var.get())   or ''
 
         wb = openpyxl.Workbook()
         ws = wb.active
@@ -449,10 +476,11 @@ class LookupTab:
                 cell.fill = f2; cell.font = NORM_FONT
                 cell.alignment = CENTER; cell.border = BORDER
 
-        pending = [r for r in self._results if r['qc_result'] == 'PENDING']
-        ok_fg   = [r for r in self._results if r['qc_result'] in ('OK','LEGACY') and not r.get('th_id')]
-        at_th   = [r for r in self._results if r.get('th_id')]
-        not_ok  = [r for r in self._results if r['qc_result'] == 'NOT_OK']
+        def ws(r): return self._window_status(r, utc_from, utc_to)
+        pending = [r for r in self._results if ws(r) == 'PENDING']
+        ok_fg   = [r for r in self._results if ws(r) == 'OK_FG']
+        at_th   = [r for r in self._results if ws(r) == 'TH']
+        not_ok  = [r for r in self._results if ws(r) == 'NOT_OK']
 
         _sec('OVERALL TOTALS')
         for lbl, val in [('Total Cycles', len(self._results)),
@@ -467,32 +495,43 @@ class LookupTab:
                 cell.alignment = CENTER; cell.border = BORDER
         ws2.append([])
 
-        _sec('BY MODEL  (QC OK cycles)')
-        _thdr('Model', 'Cycle Count', 'Total Qty')
+        _sec('BY MODEL  (status as of search window)')
+        _thdr('Model', 'Cycles', 'Pending', 'Pend Qty',
+              'OK/FG', 'FG Qty', 'At TH', 'TH Qty',
+              'NOT OK', 'NOK Qty', 'Total Qty')
         md = {}
         for r in self._results:
-            if r['qc_result'] in ('OK','LEGACY'):
-                md.setdefault(r['model'], [0,0])
-                md[r['model']][0] += 1; md[r['model']][1] += r['quantity']
-        for j, (m,(cnt,qty)) in enumerate(sorted(md.items()), 1):
-            _drow([m, cnt, qty], j % 2 == 0)
+            m = r['model']
+            md.setdefault(m, [0, 0,0, 0,0, 0,0, 0,0])
+            md[m][0] += 1
+            q = r['quantity']
+            s = ws(r)
+            if s == 'PENDING':  md[m][1] += 1; md[m][2] += q
+            elif s == 'OK_FG':  md[m][3] += 1; md[m][4] += q
+            elif s == 'TH':     md[m][5] += 1; md[m][6] += q
+            elif s == 'NOT_OK': md[m][7] += 1; md[m][8] += q
+        for j, (m, v) in enumerate(sorted(md.items()), 1):
+            total_qty = v[2] + v[4] + v[6] + v[8]
+            _drow([m, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], total_qty],
+                  j % 2 == 0)
         ws2.append([])
 
-        _sec('BY RACK')
+        _sec('BY RACK  (status as of search window)')
         _thdr('Rack Number','Cycles','Pending','OK/FG','At TH','NOT OK')
         rd = {}
         for r in self._results:
             rk = r['rack_number']
             rd.setdefault(rk, [0,0,0,0,0])
             rd[rk][0] += 1
-            if r['qc_result']=='PENDING': rd[rk][1]+=1
-            elif r['qc_result'] in ('OK','LEGACY') and not r.get('th_id'): rd[rk][2]+=1
-            elif r.get('th_id'): rd[rk][3]+=1
-            elif r['qc_result']=='NOT_OK': rd[rk][4]+=1
+            s = ws(r)
+            if s == 'PENDING':  rd[rk][1] += 1
+            elif s == 'OK_FG':  rd[rk][2] += 1
+            elif s == 'TH':     rd[rk][3] += 1
+            elif s == 'NOT_OK': rd[rk][4] += 1
         for j, (rk, vals) in enumerate(sorted(rd.items()), 1):
             _drow([rk]+vals, j % 2 == 0)
 
-        for col, w in enumerate([18,10,10,10,10,10], 1):
+        for col, w in enumerate([18, 8, 9, 9, 9, 9, 9, 9, 9, 9, 10], 1):
             ws2.column_dimensions[get_column_letter(col)].width = w
 
         wb.save(path)

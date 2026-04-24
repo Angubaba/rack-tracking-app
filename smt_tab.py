@@ -9,7 +9,7 @@ from utils import now_ist_display, normalise_rack_number
 from pending_qc_widget import PendingQCWidget
 from ui_helpers import (
     BG, colored_btn, form_label, readonly_entry, text_entry,
-    status_label, make_upper, STATUS_FG, scanner_guard,
+    status_label, make_upper, STATUS_FG, scanner_guard, attach_rack_cleaner,
 )
 
 
@@ -35,6 +35,7 @@ class SMTTab:
         # Rack Number
         form_label(f, 'RACK NUMBER:', row)
         self._rack_var = tk.StringVar()
+        attach_rack_cleaner(self._rack_var)
         self._rack_entry = text_entry(f, self._rack_var, row, font_size=14, ipady=6)
         self._rack_entry.bind('<Return>', self._on_rack_scanned)
         row += 1
@@ -63,7 +64,7 @@ class SMTTab:
                                   selectmode='browse', activestyle='none',
                                   bg='white', fg='#212529',
                                   selectbackground='#1971c2', selectforeground='white')
-        self._ac_lb.bind('<<ListboxSelect>>', self._on_ac_select)
+        self._ac_lb.bind('<ButtonRelease-1>', self._on_ac_select)
         self._ac_lb.bind('<Return>', self._on_ac_select)
         self._ac_lb.bind('<Escape>', self._hide_autocomplete)
         self._ac_lb.bind('<FocusOut>', self._hide_autocomplete)
@@ -146,21 +147,29 @@ class SMTTab:
         self._ac_lb.lift()
 
     def _hide_autocomplete(self, event=None):
-        # Delay slightly so a click on the listbox registers first
-        self.frame.after(100, self._ac_lb.grid_remove)
+        def _check():
+            try:
+                focus = self.frame.winfo_toplevel().focus_get()
+            except Exception:
+                focus = None
+            if focus is not self._ac_lb:
+                self._ac_lb.grid_remove()
+        self.frame.after(150, _check)
 
     def _ac_focus_list(self, event=None):
         if self._ac_lb.winfo_ismapped():
             self._ac_lb.focus_set()
             if self._ac_lb.size() > 0:
-                self._ac_lb.selection_set(0)
                 self._ac_lb.activate(0)
+                self._ac_lb.see(0)
 
     def _on_ac_select(self, event=None):
         sel = self._ac_lb.curselection()
-        if not sel:
+        active = self._ac_lb.index('active')
+        idx = sel[0] if sel else (active if active >= 0 else None)
+        if idx is None:
             return
-        value = self._ac_lb.get(sel[0])
+        value = self._ac_lb.get(idx)
         self._model_var.set(value)
         self._ac_lb.grid_remove()
         self._qty_entry.focus()

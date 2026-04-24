@@ -7,6 +7,7 @@ import database
 from smt_tab import SMTTab
 from ok_tab import OKTab
 from th_tab import THTab
+from dashboard_tab import DashboardTab
 from lookup_tab import LookupTab
 from settings_tab import SettingsTab
 
@@ -62,15 +63,16 @@ def main():
         SMTTab(nb),
         OKTab(nb),
         THTab(nb),
+        DashboardTab(nb),
         LookupTab(nb),
         SettingsTab(nb),
     ]
     labels = ['  SMT  ', '  QC  ', '  PRODUCTION  ',
-              '  LOOKUP  ', '  SETTINGS  ']
+              '  DASHBOARD  ', '  LOOKUP  ', '  SETTINGS  ']
     for tab, lbl in zip(tabs, labels):
         nb.add(tab.frame, text=lbl)
 
-    PROTECTED = {3, 4}  # Lookup=3, Settings=4
+    PROTECTED = {5}  # Settings=5 only; Lookup edit/delete protected inside lookup_tab
     _last_tab = [0]
 
     def _on_tab_change(event):

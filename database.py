@@ -401,7 +401,8 @@ def get_cycles(
     """
     results = []
 
-    def _wheres_params(alias_time: str, alias_rack: str, alias_model: str):
+    def _wheres_params(alias_rack: str, alias_model: str, time_aliases: list):
+        """Build WHERE clause. Date filter matches if ANY of time_aliases falls in range."""
         wheres, params = ["1=1"], []
         if rack_number:
             wheres.append(f"{alias_rack} = ?")
@@ -409,17 +410,27 @@ def get_cycles(
         if model:
             wheres.append(f"UPPER({alias_model}) LIKE UPPER(?)")
             params.append(f"%{model}%")
-        if utc_from:
-            wheres.append(f"{alias_time} >= ?")
-            params.append(utc_from)
-        if utc_to:
-            wheres.append(f"{alias_time} <= ?")
-            params.append(utc_to)
+        if utc_from or utc_to:
+            time_conds, time_params = [], []
+            for t in time_aliases:
+                parts = []
+                if utc_from:
+                    parts.append(f"{t} >= ?")
+                    time_params.append(utc_from)
+                if utc_to:
+                    parts.append(f"{t} <= ?")
+                    time_params.append(utc_to)
+                time_conds.append(f"({' AND '.join(parts)})")
+            wheres.append(f"({' OR '.join(time_conds)})")
+            params.extend(time_params)
         return " AND ".join(wheres), params
 
     with _connect() as conn:
-        # ── New cycles (anchored to SMT handover time) ──────────────────────
-        where, params = _wheres_params("sh.created_at", "sh.rack_number", "sh.model")
+        # ── New cycles — show if ANY of SMT/QC/TH timestamp falls in range ───
+        where, params = _wheres_params(
+            "sh.rack_number", "sh.model",
+            ["sh.created_at", "os.created_at", "ts.created_at"],
+        )
         rows = conn.execute(f"""
             SELECT
                 sh.id          AS smt_id,
@@ -436,16 +447,19 @@ def get_cycles(
             LEFT JOIN ok_scans os ON os.smt_handover_id = sh.id
             LEFT JOIN th_scans ts ON ts.ok_scan_id = os.id
             WHERE {where}
-            ORDER BY sh.created_at DESC
+            ORDER BY COALESCE(ts.created_at, os.created_at, sh.created_at) DESC
         """, params).fetchall()
         for r in rows:
             d = dict(r)
             d["cycle_type"] = "smt"
-            d["sort_time"]  = d["smt_time"] or ""
+            d["sort_time"]  = d["th_time"] or d["qc_time"] or d["smt_time"] or ""
             results.append(d)
 
-        # ── Legacy cycles (ok_scans with no SMT handover) ───────────────────
-        where_leg, params_leg = _wheres_params("os.created_at", "os.rack_number", "os.model")
+        # ── Legacy cycles — show if QC or TH timestamp falls in range ─────────
+        where_leg, params_leg = _wheres_params(
+            "os.rack_number", "os.model",
+            ["os.created_at", "ts.created_at"],
+        )
         leg_rows = conn.execute(f"""
             SELECT
                 os.id          AS ok_scan_id,
@@ -458,7 +472,7 @@ def get_cycles(
             FROM ok_scans os
             LEFT JOIN th_scans ts ON ts.ok_scan_id = os.id
             WHERE os.smt_handover_id IS NULL AND {where_leg}
-            ORDER BY os.created_at DESC
+            ORDER BY COALESCE(ts.created_at, os.created_at) DESC
         """, params_leg).fetchall()
         for r in leg_rows:
             d = dict(r)
@@ -469,7 +483,7 @@ def get_cycles(
             d["smt_time"]      = None
             d["qc_result"]     = "LEGACY"
             d["not_ok_reason"] = ""
-            d["sort_time"]    = d["qc_time"] or ""
+            d["sort_time"]     = d["th_time"] or d["qc_time"] or ""
             results.append(d)
 
     results.sort(key=lambda x: x["sort_time"], reverse=True)

@@ -8,13 +8,45 @@ from ui_helpers import BG, colored_btn
 
 class SettingsTab:
     def __init__(self, parent):
-        self.frame = ttk.Frame(parent, padding=20)
+        # Outer frame is the notebook tab container (no padding here)
+        self.frame = ttk.Frame(parent)
         self.frame.columnconfigure(0, weight=1)
+        self.frame.rowconfigure(0, weight=1)
         self._build()
         self._load()
 
+    def _make_scroll_canvas(self):
+        """Return (canvas, inner_frame) wired with scrollbar + mousewheel."""
+        canvas = tk.Canvas(self.frame, bg=BG, highlightthickness=0)
+        vsb = ttk.Scrollbar(self.frame, orient='vertical', command=canvas.yview)
+        canvas.configure(yscrollcommand=vsb.set)
+
+        vsb.grid(row=0, column=1, sticky='ns')
+        canvas.grid(row=0, column=0, sticky='nsew')
+        self.frame.columnconfigure(0, weight=1)
+
+        inner = ttk.Frame(canvas, padding=20)
+        inner.columnconfigure(0, weight=1)
+        win_id = canvas.create_window((0, 0), window=inner, anchor='nw')
+
+        def _on_inner_resize(event):
+            canvas.configure(scrollregion=canvas.bbox('all'))
+
+        def _on_canvas_resize(event):
+            canvas.itemconfig(win_id, width=event.width)
+
+        def _on_wheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+
+        inner.bind('<Configure>', _on_inner_resize)
+        canvas.bind('<Configure>', _on_canvas_resize)
+        canvas.bind('<Enter>', lambda _: canvas.bind_all('<MouseWheel>', _on_wheel))
+        canvas.bind('<Leave>', lambda _: canvas.unbind_all('<MouseWheel>'))
+
+        return inner
+
     def _build(self):
-        f = self.frame
+        f = self._make_scroll_canvas()
         row = 0
 
         ttk.Label(f, text='Settings', font=('Segoe UI', 15, 'bold')).grid(

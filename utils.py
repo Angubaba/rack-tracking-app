@@ -24,9 +24,9 @@ def now_ist_display() -> str:
 
 
 def normalise_rack_number(rack_id: str) -> str:
-    """Remove ALL whitespace (spaces, newlines, tabs, CR) then uppercase."""
+    """Keep only alphanumeric and slash, strip everything else (whitespace, scanner garbage)."""
     import re
-    return re.sub(r'\s+', '', rack_id).upper()
+    return re.sub(r'[^A-Za-z0-9/]', '', rack_id).upper()
 
 
 def validate_rack_number(rack_id: str) -> bool:

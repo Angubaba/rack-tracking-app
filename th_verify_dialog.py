@@ -2,7 +2,6 @@
 import tkinter as tk
 from tkinter import ttk
 
-import database
 from utils import to_ist
 from ui_helpers import colored_btn, BG
 
@@ -42,13 +41,11 @@ class _THVerifyDialog:
         card.grid(row=1, column=0, sticky='ew', pady=(0, 10))
         card.columnconfigure(1, weight=1)
 
-        pcb_count = len(database.get_pcb_samples(ok_scan['id']))
         fields = [
             ('Rack Number',  ok_scan['rack_number']),
             ('Model',        ok_scan['model']),
             ('Quantity',     str(ok_scan['quantity'])),
             ('Inspected By', ok_scan['inspected_by']),
-            ('PCBs Sampled', str(pcb_count)),
             ('In FG Since',  to_ist(ok_scan['created_at'])),
         ]
         for r, (label, value) in enumerate(fields):

@@ -70,6 +70,24 @@ def make_upper(var):
     pass
 
 
+def attach_rack_cleaner(var):
+    """Strip non-printable/non-rack characters in real-time as the scanner types."""
+    import re
+    _busy = [False]
+
+    def _clean(*_):
+        if _busy[0]:
+            return
+        raw = var.get()
+        cleaned = re.sub(r'[^A-Za-z0-9/]', '', raw).upper()
+        if cleaned != raw:
+            _busy[0] = True
+            var.set(cleaned)
+            _busy[0] = False
+
+    var.trace_add('write', _clean)
+
+
 def scanner_guard(widget, entries, block_ms=600):
     """
     Call this after a rack-entry <Return> fires to block scanner overflow.

@@ -9,6 +9,7 @@ from active_racks_widget import ActiveRacksWidget
 from ui_helpers import (
     BG, colored_btn, form_label, readonly_entry, text_entry,
     status_label, make_upper, STATUS_FG, ask_yes_no, scanner_guard,
+    attach_rack_cleaner,
 )
 
 
@@ -33,7 +34,7 @@ class THTab:
         # Rack Number
         form_label(f, 'RACK NUMBER:', row)
         self._rack_var = tk.StringVar()
-        make_upper(self._rack_var)
+        attach_rack_cleaner(self._rack_var)
         self._rack_entry = text_entry(f, self._rack_var, row, font_size=14, ipady=6)
         self._rack_entry.bind('<Return>', self._on_rack_scanned)
         row += 1
