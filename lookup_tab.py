@@ -21,6 +21,8 @@ QC_LABELS = {
     'OK':      'OK',
     'NOT_OK':  'NOT OK',
     'LEGACY':  'OK (legacy)',
+    'TROLLEY': 'Trolley → TH',
+    'TRAY':    'Tray → TH',
 }
 
 _COLS = ('no', 'rack', 'model', 'qty',
@@ -360,6 +362,11 @@ class LookupTab:
         cycle = self._selected_cycle()
         if not cycle:
             return
+        if cycle.get('cycle_type') == 'trolley':
+            show_info('Edit Not Supported',
+                      'Trolley / Tray records cannot be edited.\n'
+                      'Delete and re-enter if needed.')
+            return
         from ui_helpers import ask_password
         if not ask_password(self.frame.winfo_toplevel()):
             return
@@ -375,13 +382,19 @@ class LookupTab:
         if not ask_password(self.frame.winfo_toplevel()):
             return
         rack = cycle['rack_number']
-        msg = (f"Delete the full cycle for rack {rack}?\n"
-               f"This removes the SMT handover and all linked QC/TH records."
-               if cycle['cycle_type'] == 'smt' else
-               f"Delete this legacy QC/TH record for rack {rack}?")
+        ctype = cycle.get('cycle_type')
+        if ctype == 'trolley':
+            msg = f"Delete this trolley/tray record ({rack})?"
+        elif ctype == 'smt':
+            msg = (f"Delete the full cycle for rack {rack}?\n"
+                   f"This removes the SMT handover and all linked QC/TH records.")
+        else:
+            msg = f"Delete this legacy QC/TH record for rack {rack}?"
         if not ask_yes_no('Delete Cycle', msg):
             return
-        if cycle['cycle_type'] == 'smt' and cycle.get('smt_id'):
+        if ctype == 'trolley' and cycle.get('trolley_id'):
+            database.delete_trolley_scan(cycle['trolley_id'])
+        elif ctype == 'smt' and cycle.get('smt_id'):
             database.delete_smt_handover(cycle['smt_id'])
         elif cycle.get('ok_scan_id'):
             database.delete_ok_scan(cycle['ok_scan_id'])

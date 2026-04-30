@@ -86,14 +86,28 @@ def init_db() -> None:
             except Exception:
                 pass  # Column already exists
 
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_smt_rack   ON smt_handovers(rack_number)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_smt_status ON smt_handovers(status)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_ok_rack    ON ok_scans(rack_number)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_ok_time    ON ok_scans(created_at)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_ok_smt_id  ON ok_scans(smt_handover_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_th_ok_id   ON th_scans(ok_scan_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_pcb_ok_id  ON pcb_samples(ok_scan_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_th_rack    ON th_scans(rack_number)")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS trolley_scans (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                type        TEXT    NOT NULL,
+                identifier  TEXT    NOT NULL,
+                model       TEXT    NOT NULL,
+                quantity    INTEGER NOT NULL,
+                cards       INTEGER,
+                taken_by    TEXT    NOT NULL,
+                created_at  TEXT    NOT NULL
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_smt_rack    ON smt_handovers(rack_number)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_smt_status  ON smt_handovers(status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ok_rack     ON ok_scans(rack_number)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ok_time     ON ok_scans(created_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ok_smt_id   ON ok_scans(smt_handover_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_th_ok_id    ON th_scans(ok_scan_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pcb_ok_id   ON pcb_samples(ok_scan_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_th_rack     ON th_scans(rack_number)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_trl_model   ON trolley_scans(model)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_trl_time    ON trolley_scans(created_at)")
         conn.commit()
 
 
@@ -392,6 +406,27 @@ def get_smt_handover_by_id(smt_id: int):
         ).fetchone()
 
 
+# ── Trolley / Tray scans ─────────────────────────────────────────────────────
+
+def insert_trolley_scan(type_: str, identifier: str, model: str,
+                        quantity: int, taken_by: str, cards: int = None) -> int:
+    now = datetime.now(timezone.utc).isoformat()
+    with _connect() as conn:
+        cur = conn.execute(
+            "INSERT INTO trolley_scans (type, identifier, model, quantity, taken_by, created_at, cards)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (type_, identifier, model, quantity, taken_by, now, cards),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def delete_trolley_scan(scan_id: int) -> None:
+    with _connect() as conn:
+        conn.execute("DELETE FROM trolley_scans WHERE id = ?", (scan_id,))
+        conn.commit()
+
+
 # ── Cycle lookup ─────────────────────────────────────────────────────────────
 
 def get_cycles(
@@ -500,6 +535,52 @@ def get_cycles(
             d["not_ok_reason"] = ""
             d["sort_time"]     = d["th_time"] or d["qc_time"] or ""
             results.append(d)
+
+        # ── Trolley / Tray direct-TH records ─────────────────────────────────
+        tr_wheres, tr_params = [], []
+        if rack_number:
+            tr_wheres.append("identifier = ?")
+            tr_params.append(rack_number)
+        if model:
+            tr_wheres.append("UPPER(model) LIKE UPPER(?)")
+            tr_params.append(f"%{model}%")
+        if utc_from or utc_to:
+            parts = []
+            if utc_from:
+                parts.append("created_at >= ?")
+                tr_params.append(utc_from)
+            if utc_to:
+                parts.append("created_at <= ?")
+                tr_params.append(utc_to)
+            tr_wheres.append(f"({' AND '.join(parts)})")
+        tr_where = ("WHERE " + " AND ".join(tr_wheres)) if tr_wheres else ""
+        tr_rows = conn.execute(
+            f"SELECT * FROM trolley_scans {tr_where} ORDER BY created_at DESC",
+            tr_params,
+        ).fetchall()
+        for r in tr_rows:
+            d = dict(r)
+            results.append({
+                'cycle_type':    'trolley',
+                'trolley_id':    d['id'],
+                'smt_id':        None,
+                'rack_number':   d['identifier'],
+                'model':         d['model'],
+                'quantity':      d['quantity'],
+                'smt_operator':  '',
+                'line':          '',
+                'smt_time':      None,
+                'qc_result':     d['type'],        # 'TROLLEY' or 'TRAY'
+                'not_ok_reason': '',
+                'ok_scan_id':    None,
+                'qc_inspector':  '',
+                'qc_time':       None,
+                'th_id':         d['id'],          # truthy → dashboard counts as TH
+                'th_taken_by':   d['taken_by'],
+                'th_time':       d['created_at'],
+                'cards':         d['cards'],
+                'sort_time':     d['created_at'],
+            })
 
     results.sort(key=lambda x: x["sort_time"], reverse=True)
     return results
