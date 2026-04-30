@@ -1,4 +1,5 @@
 """Shared UI helpers for the tkinter rewrite."""
+import re as _re
 import tkinter as tk
 from tkinter import ttk
 
@@ -88,33 +89,73 @@ def attach_rack_cleaner(var):
     var.trace_add('write', _clean)
 
 
-def scanner_guard(widget, entries, block_ms=600):
-    """
-    Call this after a rack-entry <Return> fires to block scanner overflow.
+_RACK_LIKE = _re.compile(r'^(PR|MR)/\d', _re.IGNORECASE)
 
-    The scanner (Newland etc.) sometimes re-sends the barcode after the first
-    Return moves focus to the next field.  This briefly sets every entry in
-    `entries` to readonly so the overflow characters are discarded, then
-    restores them after `block_ms` milliseconds.
+
+def attach_rack_blocker(var, on_blocked):
+    """
+    Reject rack barcodes (PR/xxx or MR/xxx) typed/scanned into a non-rack field.
+    Clears the variable and calls on_blocked() as soon as the pattern is detected.
+    """
+    _busy = [False]
+
+    def _check(*_):
+        if _busy[0]:
+            return
+        if _RACK_LIKE.match(var.get()):
+            _busy[0] = True
+            var.set('')
+            _busy[0] = False
+            on_blocked()
+
+    var.trace_add('write', _check)
+
+
+_SCAN_BLOCK_TAG = 'ScannerGuardBlock'
+
+
+def scanner_guard(rack_entry, entries, block_ms=2000):
+    """
+    Block scanner overflow after a rack scan for block_ms milliseconds.
+
+    Two-pronged defence:
+      1. Sets all entries (including rack_entry itself) to readonly so the
+         re-sent barcode characters are discarded.
+      2. Inserts a high-priority bindtag that swallows <Return> before the
+         widget's own binding can fire — stops Enter from triggering
+         downstream handlers (mark-OK, handover, focus-shift lambdas, etc).
 
     Usage:
-        rack_entry.bind('<Return>', lambda e: scanner_guard(
-            rack_entry, [line_entry, model_entry, qty_entry, op_entry]))
+        rack_entry.bind('<Return>', lambda e: (
+            scanner_guard(rack_entry, [inspector_entry]), process_scan()))
     """
-    for e in entries:
+    all_entries = [rack_entry] + list(entries)
+
+    # Register the swallow binding once per application lifecycle (idempotent).
+    rack_entry.bind_class(_SCAN_BLOCK_TAG, '<Return>', lambda ev: 'break')
+
+    for e in all_entries:
         try:
             e.config(state='readonly')
         except Exception:
             pass
+        tags = list(e.bindtags())
+        if _SCAN_BLOCK_TAG not in tags:
+            tags.insert(0, _SCAN_BLOCK_TAG)
+            e.bindtags(tags)
 
     def _restore():
-        for e in entries:
+        for e in all_entries:
             try:
                 e.config(state='normal')
             except Exception:
                 pass
+            tags = list(e.bindtags())
+            if _SCAN_BLOCK_TAG in tags:
+                tags.remove(_SCAN_BLOCK_TAG)
+            e.bindtags(tags)
 
-    widget.after(block_ms, _restore)
+    rack_entry.after(block_ms, _restore)
 
 
 def scrolled_tree(parent, columns, headings, col_widths=None,

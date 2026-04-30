@@ -4,6 +4,7 @@ from tkinter import ttk
 from datetime import datetime, timezone, timedelta
 
 import database
+import settings
 from ui_helpers import BG, colored_btn, scrolled_tree
 
 IST = timedelta(hours=5, minutes=30)
@@ -16,12 +17,17 @@ _COLS  = ('model',
           'tot_r',  'tot_q')
 _HEADS = ('Model',
           'Pending', 'Pending',
-          'FG',    'FG',
-          'TH',    'TH',
-          'Not OK', 'Not OK',
-          'Tot. Racks', 'Tot. Panel')
+          'FG',      'FG',
+          'TH',      'TH',
+          'Not OK',  'Not OK',
+          'Tot. Racks', 'Tot. Cards')
 _WIDTHS = {c: 82 for c in _COLS}
 _WIDTHS['model'] = 100
+_WIDTHS['pend_q'] = 90
+_WIDTHS['fg_q']   = 90
+_WIDTHS['th_q']   = 90
+_WIDTHS['nok_q']  = 90
+_WIDTHS['tot_q']  = 90
 
 # Col indices (1-based, as Treeview reports them)
 _COL_PEND_R = 2
@@ -97,7 +103,8 @@ class DashboardTab:
                           'fg_r': 0,   'fg_q': 0,
                           'th_r': 0,   'th_q': 0,
                           'nok_r': 0,  'nok_q': 0}
-            q  = c['quantity']
+            cards_val = c.get('cards')
+            q = settings.resolve_cards(c['quantity'], cards_val, m)
             qr = c['qc_result']
             if qr == 'PENDING':
                 md[m]['pend_r'] += 1; md[m]['pend_q'] += q
@@ -129,16 +136,16 @@ class DashboardTab:
                 tot[k] += d[k]
 
         parts = []
-        if tot['pend_r']: parts.append(f"Pending for QC: {tot['pend_r']} racks / {tot['pend_q']} panels")
-        if tot['fg_r']:   parts.append(f"In FG: {tot['fg_r']} racks / {tot['fg_q']} panels")
-        if tot['th_r']:   parts.append(f"At TH: {tot['th_r']} racks / {tot['th_q']} panels")
-        if tot['nok_r']:  parts.append(f"NOT OK: {tot['nok_r']} racks / {tot['nok_q']} panels")
+        if tot['pend_r']: parts.append(f"Pending for QC: {tot['pend_r']} racks / {tot['pend_q']} cards")
+        if tot['fg_r']:   parts.append(f"In FG: {tot['fg_r']} racks / {tot['fg_q']} cards")
+        if tot['th_r']:   parts.append(f"At TH: {tot['th_r']} racks / {tot['th_q']} cards")
+        if tot['nok_r']:  parts.append(f"NOT OK: {tot['nok_r']} racks / {tot['nok_q']} cards")
         self._summary_var.set('  ·  '.join(parts) if parts else 'No records for today yet.')
 
         tot_r = tot['pend_r'] + tot['fg_r'] + tot['th_r'] + tot['nok_r']
         tot_q = tot['pend_q'] + tot['fg_q'] + tot['th_q'] + tot['nok_q']
         self._footer_var.set(
-            f"TOTALS   {tot_r} racks  /  {tot_q} panels"
+            f"TOTALS   {tot_r} racks  /  {tot_q} cards"
             f"     |     Pending for QC: {tot['pend_r']} / {tot['pend_q']}"
             f"   In FG: {tot['fg_r']} / {tot['fg_q']}"
             f"   At TH: {tot['th_r']} / {tot['th_q']}"

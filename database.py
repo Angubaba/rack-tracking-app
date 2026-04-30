@@ -77,6 +77,9 @@ def init_db() -> None:
             "ALTER TABLE ok_scans ADD COLUMN smt_handover_id INTEGER REFERENCES smt_handovers(id)",
             "ALTER TABLE smt_handovers ADD COLUMN line TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE smt_handovers ADD COLUMN not_ok_reason TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE smt_handovers ADD COLUMN cards INTEGER",
+            "ALTER TABLE ok_scans ADD COLUMN cards INTEGER",
+            "ALTER TABLE th_scans ADD COLUMN cards INTEGER",
         ]:
             try:
                 conn.execute(migration)
@@ -96,13 +99,14 @@ def init_db() -> None:
 
 # ── OK scans ─────────────────────────────────────────────────────────────────
 
-def insert_ok_scan(rack_number: str, model: str, quantity: int, inspected_by: str) -> int:
+def insert_ok_scan(rack_number: str, model: str, quantity: int, inspected_by: str,
+                   cards: int = None) -> int:
     now = datetime.now(timezone.utc).isoformat()
     with _connect() as conn:
         cur = conn.execute(
-            "INSERT INTO ok_scans (rack_number, model, quantity, inspected_by, created_at)"
-            " VALUES (?, ?, ?, ?, ?)",
-            (rack_number, model, quantity, inspected_by, now),
+            "INSERT INTO ok_scans (rack_number, model, quantity, inspected_by, created_at, cards)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (rack_number, model, quantity, inspected_by, now, cards),
         )
         conn.commit()
         return cur.lastrowid
@@ -140,11 +144,15 @@ def insert_th_scan(
 ) -> int:
     now = datetime.now(timezone.utc).isoformat()
     with _connect() as conn:
+        ok_row = conn.execute(
+            "SELECT cards FROM ok_scans WHERE id = ?", (ok_scan_id,)
+        ).fetchone()
+        cards = ok_row["cards"] if ok_row else None
         cur = conn.execute(
             "INSERT INTO th_scans"
-            " (ok_scan_id, rack_number, model, quantity, inspected_by, taken_by, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (ok_scan_id, rack_number, model, quantity, inspected_by, taken_by, now),
+            " (ok_scan_id, rack_number, model, quantity, inspected_by, taken_by, created_at, cards)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (ok_scan_id, rack_number, model, quantity, inspected_by, taken_by, now, cards),
         )
         conn.commit()
         return cur.lastrowid
@@ -267,14 +275,15 @@ def get_all_pcb_ids_for_rack(rack_number: str) -> set:
 # ── SMT Handovers ─────────────────────────────────────────────────────────────
 
 def insert_smt_handover(rack_number: str, model: str, quantity: int,
-                        smt_operator: str, line: str = "") -> int:
+                        smt_operator: str, line: str = "",
+                        cards: int = None) -> int:
     now = datetime.now(timezone.utc).isoformat()
     with _connect() as conn:
         cur = conn.execute(
             "INSERT INTO smt_handovers"
-            " (rack_number, model, quantity, smt_operator, line, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (rack_number, model, quantity, smt_operator, line, now),
+            " (rack_number, model, quantity, smt_operator, line, created_at, cards)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (rack_number, model, quantity, smt_operator, line, now, cards),
         )
         conn.commit()
         return cur.lastrowid
@@ -304,15 +313,19 @@ def mark_qc_ok(
     """Mark an SMT handover as OK, create the linked ok_scan, insert PCB samples."""
     now = datetime.now(timezone.utc).isoformat()
     with _connect() as conn:
+        smt_row = conn.execute(
+            "SELECT cards FROM smt_handovers WHERE id = ?", (smt_handover_id,)
+        ).fetchone()
+        cards = smt_row["cards"] if smt_row else None
         conn.execute(
             "UPDATE smt_handovers SET status='OK', processed_at=? WHERE id=?",
             (now, smt_handover_id),
         )
         cur = conn.execute(
             "INSERT INTO ok_scans"
-            " (rack_number, model, quantity, inspected_by, created_at, smt_handover_id)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (rack_number, model, quantity, inspected_by, now, smt_handover_id),
+            " (rack_number, model, quantity, inspected_by, created_at, smt_handover_id, cards)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (rack_number, model, quantity, inspected_by, now, smt_handover_id, cards),
         )
         ok_scan_id = cur.lastrowid
         if pcb_ids:
@@ -442,7 +455,8 @@ def get_cycles(
                 os.created_at  AS qc_time,
                 ts.id          AS th_id,
                 ts.taken_by    AS th_taken_by,
-                ts.created_at  AS th_time
+                ts.created_at  AS th_time,
+                COALESCE(ts.cards, os.cards, sh.cards) AS cards
             FROM smt_handovers sh
             LEFT JOIN ok_scans os ON os.smt_handover_id = sh.id
             LEFT JOIN th_scans ts ON ts.ok_scan_id = os.id
@@ -468,7 +482,8 @@ def get_cycles(
                 os.created_at  AS qc_time,
                 ts.id          AS th_id,
                 ts.taken_by    AS th_taken_by,
-                ts.created_at  AS th_time
+                ts.created_at  AS th_time,
+                COALESCE(ts.cards, os.cards) AS cards
             FROM ok_scans os
             LEFT JOIN th_scans ts ON ts.ok_scan_id = os.id
             WHERE os.smt_handover_id IS NULL AND {where_leg}

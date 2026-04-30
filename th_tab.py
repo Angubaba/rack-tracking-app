@@ -70,7 +70,7 @@ class THTab:
         self.frame.after(1000, self._tick)
 
     def _on_rack_scanned(self, _=None):
-        scanner_guard(self.frame, [])
+        scanner_guard(self._rack_entry, [])
         self._on_scan()
 
     def _on_scan(self, _=None):

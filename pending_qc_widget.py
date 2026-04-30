@@ -3,12 +3,13 @@ import tkinter as tk
 from tkinter import ttk
 
 import database
+import settings
 from utils import to_ist
 from ui_helpers import scrolled_tree, fill_tree, BG
 
-_COLS = ('rack', 'model', 'qty', 'line', 'operator', 'time')
-_HEADS = ('Rack No.', 'Model', 'Qty', 'Line', 'SMT Operator', 'Handed Over (IST)')
-_WIDTHS = {'qty': 60, 'time': 160}
+_COLS = ('rack', 'model', 'panels', 'cards', 'line', 'operator', 'time')
+_HEADS = ('Rack No.', 'Model', 'Panels', 'Cards', 'Line', 'SMT Operator', 'Handed Over (IST)')
+_WIDTHS = {'panels': 70, 'cards': 70, 'time': 160}
 _STRETCH = ('rack', 'model', 'line', 'operator', 'time')
 
 
@@ -30,6 +31,8 @@ class PendingQCWidget:
     def refresh(self):
         rows = database.get_pending_for_qc()
         fill_tree(self._tree, rows, lambda r: (
-            r['rack_number'], r['model'], r['quantity'],
+            r['rack_number'], r['model'],
+            r['quantity'],
+            settings.resolve_cards(r['quantity'], r['cards'] if 'cards' in r.keys() else None, r['model']),
             r['line'] or '—', r['smt_operator'], to_ist(r['created_at']),
         ))

@@ -10,6 +10,7 @@ from pending_qc_widget import PendingQCWidget
 from ui_helpers import (
     BG, colored_btn, form_label, readonly_entry, text_entry,
     status_label, make_upper, STATUS_FG, scanner_guard, attach_rack_cleaner,
+    attach_rack_blocker,
 )
 
 
@@ -43,6 +44,9 @@ class SMTTab:
         # Line
         form_label(f, 'LINE:', row)
         self._line_var = tk.StringVar()
+        attach_rack_blocker(self._line_var,
+            lambda: self._set_status(
+                'Rack barcode scanned into wrong field — use RACK NUMBER.', 'error'))
         self._line_entry = text_entry(f, self._line_var, row)
         self._line_entry.bind('<Return>', lambda e: self._model_entry.focus())
         row += 1
@@ -50,6 +54,9 @@ class SMTTab:
         # Model (with autocomplete)
         form_label(f, 'MODEL:', row)
         self._model_var = tk.StringVar()
+        attach_rack_blocker(self._model_var,
+            lambda: self._set_status(
+                'Rack barcode scanned into wrong field — use RACK NUMBER.', 'error'))
         self._model_entry = text_entry(f, self._model_var, row)
         self._model_entry.bind('<Return>', lambda e: self._qty_entry.focus())
         self._model_entry.bind('<KeyRelease>', self._on_model_key)
@@ -71,9 +78,11 @@ class SMTTab:
         # Not gridded yet — shown dynamically at row for MODEL
         self._ac_row = row - 1   # will overlay below model row
 
-        # Quantity (plain entry, starts blank)
-        form_label(f, 'QUANTITY:', row)
+        # Panels (quantity)
+        form_label(f, 'PANELS:', row)
         self._qty_var = tk.StringVar()
+        self._qty_var.trace_add('write', self._on_qty_change)
+        self._model_var.trace_add('write', self._on_qty_change)
         qty_frame = ttk.Frame(f)
         qty_frame.grid(row=row, column=1, sticky='w', pady=3)
         self._qty_entry = ttk.Entry(qty_frame, textvariable=self._qty_var,
@@ -82,9 +91,21 @@ class SMTTab:
         self._qty_entry.bind('<Return>', lambda e: self._op_entry.focus())
         row += 1
 
+        # Cards (computed, readonly)
+        form_label(f, 'CARDS:', row)
+        self._cards_var = tk.StringVar(value='—')
+        tk.Entry(f, textvariable=self._cards_var, state='readonly',
+                 font=('Segoe UI', 11), bg='#e7f5ff', fg='#1864ab',
+                 readonlybackground='#e7f5ff', relief='solid', bd=1,
+                 width=14).grid(row=row, column=1, sticky='w', pady=3, ipady=4)
+        row += 1
+
         # SMT Operator
         form_label(f, 'SMT OPERATOR:', row)
         self._op_var = tk.StringVar()
+        attach_rack_blocker(self._op_var,
+            lambda: self._set_status(
+                'Rack barcode scanned into wrong field — use RACK NUMBER.', 'error'))
         self._op_entry = text_entry(f, self._op_var, row)
         self._op_entry.bind('<Return>', self._on_handover)
         row += 1
@@ -116,7 +137,7 @@ class SMTTab:
         f.rowconfigure(row, weight=1)
 
     def _on_rack_scanned(self, _=None):
-        scanner_guard(self.frame, [
+        scanner_guard(self._rack_entry, [
             self._line_entry, self._model_entry,
             self._qty_entry, self._op_entry,
         ])
@@ -174,6 +195,23 @@ class SMTTab:
         self._ac_lb.grid_remove()
         self._qty_entry.focus()
 
+    # ── Cards computation ─────────────────────────────────────────────────────
+
+    def _on_qty_change(self, *_):
+        if not hasattr(self, '_cards_var'):
+            return
+        model = self._model_var.get().strip().upper()
+        qty_raw = self._qty_var.get().strip()
+        try:
+            qty = int(qty_raw)
+            if qty >= 1 and model:
+                cpp = settings.get_cards_per_panel(model)
+                self._cards_var.set(str(qty * cpp))
+            else:
+                self._cards_var.set('—')
+        except ValueError:
+            self._cards_var.set('—')
+
     # ── Tick ─────────────────────────────────────────────────────────────────
 
     def _tick(self):
@@ -218,6 +256,7 @@ class SMTTab:
             for v in (self._rack_var, self._line_var, self._model_var, self._op_var):
                 v.set('')
             self._qty_var.set('')
+            self._cards_var.set('—')
             self._pending.refresh()
 
         self._rack_entry.focus()

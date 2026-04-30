@@ -10,6 +10,7 @@ DEFAULTS = {
     "completion_lock_minutes":  10,
     "models":                   [],
     "admin_password":           "1234",
+    "cards_per_panel":          {},
 }
 
 
@@ -44,3 +45,23 @@ def save_models(models: list) -> None:
     data = load()
     data["models"] = sorted(set(m.upper() for m in models))
     _SETTINGS_PATH.write_text(json.dumps(data, indent=2))
+
+
+def get_cards_per_panel(model: str) -> int:
+    data = load()
+    return int(data.get("cards_per_panel", {}).get(model, 1))
+
+
+def save_cards_per_panel(model: str, cpp: int) -> None:
+    data = load()
+    cpp_dict = dict(data.get("cards_per_panel", {}))
+    cpp_dict[model] = cpp
+    data["cards_per_panel"] = cpp_dict
+    _SETTINGS_PATH.write_text(json.dumps(data, indent=2))
+
+
+def resolve_cards(quantity: int, cards_val, model: str) -> int:
+    """Return stored cards if not None, else compute quantity * CPP."""
+    if cards_val is not None:
+        return int(cards_val)
+    return quantity * get_cards_per_panel(model)

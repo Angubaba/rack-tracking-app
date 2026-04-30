@@ -5,6 +5,8 @@ from tkinter import ttk
 import settings
 from ui_helpers import BG, colored_btn
 
+_DEFAULT_CPP = 1
+
 
 class SettingsTab:
     def __init__(self, parent):
@@ -119,6 +121,33 @@ class SettingsTab:
                     self._remove_models, bold=False, pady=4).grid(
             row=4, column=0, columnspan=2, sticky='w')
 
+        # ── Cards per Panel ───────────────────────────────────────────────────
+        ttk.Label(models_frame,
+                  text='Cards per Panel — select a model above then set the value:',
+                  font=('Segoe UI', 10, 'bold')).grid(
+            row=5, column=0, columnspan=2, sticky='w', pady=(10, 2))
+
+        cpp_frame = ttk.Frame(models_frame)
+        cpp_frame.grid(row=6, column=0, columnspan=2, sticky='ew')
+
+        self._cpp_model_var = tk.StringVar(value='(none selected)')
+        tk.Label(cpp_frame, textvariable=self._cpp_model_var,
+                 font=('Segoe UI', 11, 'bold'), bg=BG, fg='#1971c2',
+                 width=14, anchor='w').pack(side='left', padx=(0, 8))
+
+        self._cpp_spin = tk.Spinbox(cpp_frame, from_=1, to=9999, width=7,
+                                    font=('Segoe UI', 12), relief='solid', bd=1)
+        self._cpp_spin.pack(side='left', ipady=4)
+        tk.Label(cpp_frame, text='cards / panel',
+                 font=('Segoe UI', 11), bg=BG).pack(side='left', padx=(6, 12))
+        colored_btn(cpp_frame, 'Set', 'primary',
+                    self._on_set_cpp, bold=False, pady=4).pack(side='left')
+        self._cpp_status_var = tk.StringVar()
+        tk.Label(cpp_frame, textvariable=self._cpp_status_var,
+                 font=('Segoe UI', 10, 'bold'), bg=BG, fg='#2f9e44').pack(side='left', padx=8)
+
+        self._model_list.bind('<<ListboxSelect>>', self._on_model_select)
+
         # ── Change Password ───────────────────────────────────────────────────
         pw_frame = ttk.LabelFrame(f, text='Change Password', padding=10)
         pw_frame.grid(row=row, column=0, sticky='ew', pady=(0, 12))
@@ -184,6 +213,32 @@ class SettingsTab:
         return row
 
     # ── data ──────────────────────────────────────────────────────────────────
+
+    def _on_model_select(self, _=None):
+        sel = self._model_list.curselection()
+        if not sel:
+            return
+        model = self._model_list.get(sel[0])
+        self._cpp_model_var.set(model)
+        cpp = settings.get_cards_per_panel(model)
+        self._cpp_spin.delete(0, 'end')
+        self._cpp_spin.insert(0, str(cpp))
+        self._cpp_status_var.set('')
+
+    def _on_set_cpp(self):
+        model = self._cpp_model_var.get()
+        if model == '(none selected)':
+            return
+        try:
+            cpp = int(self._cpp_spin.get())
+            if cpp < 1:
+                raise ValueError
+        except ValueError:
+            self._cpp_status_var.set('Invalid value.')
+            return
+        settings.save_cards_per_panel(model, cpp)
+        self._cpp_status_var.set(f"Saved: {cpp} cards/panel")
+        self.frame.after(2500, lambda: self._cpp_status_var.set(''))
 
     def _add_model(self, _=None):
         name = self._model_input.get().strip().upper()

@@ -140,7 +140,8 @@ def perform_smt_handover(
     result = validate_smt_handover(rack_number, model, quantity, smt_operator, line)
     if not result.success:
         return result
-    smt_id = database.insert_smt_handover(rack_number, model, quantity, smt_operator, line)
+    cards = quantity * settings.get_cards_per_panel(model)
+    smt_id = database.insert_smt_handover(rack_number, model, quantity, smt_operator, line, cards)
     return ScanResult(True, f"Rack {rack_number} handed over to QC.", "success", smt_id)
 
 

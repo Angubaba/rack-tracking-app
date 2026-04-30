@@ -3,12 +3,13 @@ import tkinter as tk
 from tkinter import ttk, simpledialog
 
 import database
+import settings
 from utils import now_ist_display, normalise_rack_number
 from pending_qc_widget import PendingQCWidget
 from ui_helpers import (
     BG, colored_btn, form_label, readonly_entry, text_entry,
     status_label, make_upper, STATUS_FG, ask_yes_no, show_warning, scanner_guard,
-    attach_rack_cleaner,
+    attach_rack_cleaner, attach_rack_blocker,
 )
 
 
@@ -47,21 +48,33 @@ class OKTab:
         model_entry.grid(row=row, column=1, sticky='ew', pady=3, ipady=4)
         row += 1
 
-        # Quantity (auto-filled, readonly)
-        form_label(f, 'QUANTITY:', row)
+        # Panels (auto-filled, readonly)
+        form_label(f, 'PANELS:', row)
         self._qty_var = tk.StringVar()
         qty_frame = ttk.Frame(f)
         qty_frame.grid(row=row, column=1, sticky='w', pady=3)
-        qty_entry = tk.Entry(qty_frame, textvariable=self._qty_var, state='readonly',
-                             font=('Segoe UI', 11), width=12, bg='#e7f5ff', fg='#1864ab',
-                             readonlybackground='#e7f5ff', relief='solid', bd=1)
-        qty_entry.pack(side='left', ipady=4)
+        tk.Entry(qty_frame, textvariable=self._qty_var, state='readonly',
+                 font=('Segoe UI', 11), width=10, bg='#e7f5ff', fg='#1864ab',
+                 readonlybackground='#e7f5ff', relief='solid', bd=1).pack(side='left', ipady=4)
+        row += 1
+
+        # Cards (auto-filled, readonly)
+        form_label(f, 'CARDS:', row)
+        self._cards_var = tk.StringVar()
+        cards_frame = ttk.Frame(f)
+        cards_frame.grid(row=row, column=1, sticky='w', pady=3)
+        tk.Entry(cards_frame, textvariable=self._cards_var, state='readonly',
+                 font=('Segoe UI', 11), width=10, bg='#e7f5ff', fg='#1864ab',
+                 readonlybackground='#e7f5ff', relief='solid', bd=1).pack(side='left', ipady=4)
         row += 1
 
         # Inspected By
         form_label(f, 'INSPECTED BY:', row)
         self._inspector_var = tk.StringVar()
         make_upper(self._inspector_var)
+        attach_rack_blocker(self._inspector_var,
+            lambda: self._set_status(
+                'Rack barcode scanned into wrong field — use RACK NUMBER.', 'error'))
         self._inspector_entry = text_entry(f, self._inspector_var, row)
         self._inspector_entry.bind('<Return>', self._on_mark_ok)
         row += 1
@@ -102,7 +115,7 @@ class OKTab:
         self.frame.after(1000, self._tick)
 
     def _on_rack_scanned(self, _=None):
-        scanner_guard(self.frame, [self._inspector_entry])
+        scanner_guard(self._rack_entry, [self._inspector_entry])
         self._on_rack_entered()
 
     def _on_rack_entered(self, _=None):
@@ -111,15 +124,20 @@ class OKTab:
             return
         pending = database.get_pending_rack(rack)
         if pending:
+            qty = pending['quantity']
+            cards_val = pending['cards'] if 'cards' in pending.keys() else None
+            cards = settings.resolve_cards(qty, cards_val, pending['model'])
             self._model_var.set(pending['model'])
-            self._qty_var.set(str(pending['quantity']))
+            self._qty_var.set(str(qty))
+            self._cards_var.set(str(cards))
             self._set_status(
-                f"Rack {rack} found — {pending['model']}, qty {pending['quantity']}.",
+                f"Rack {rack} found — {pending['model']}, {qty} panels / {cards} cards.",
                 'success')
             self._inspector_entry.focus()
         else:
             self._model_var.set('')
             self._qty_var.set('')
+            self._cards_var.set('')
             self._set_status(f"Rack {rack} is not in Pending for QC.", 'error')
 
     def _validate_form(self):
@@ -242,7 +260,7 @@ class OKTab:
         self._pending.refresh()
 
     def _clear_form(self):
-        for v in (self._rack_var, self._model_var, self._qty_var, self._inspector_var):
+        for v in (self._rack_var, self._model_var, self._qty_var, self._cards_var, self._inspector_var):
             v.set('')
 
     def _set_status(self, msg, status):

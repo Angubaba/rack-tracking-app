@@ -4,6 +4,8 @@ from tkinter import ttk, filedialog
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+import calendar as _calendar
+
 import database
 import settings
 from utils import to_ist
@@ -26,7 +28,7 @@ _COLS = ('no', 'rack', 'model', 'qty',
          'qc_res', 'qc_ins', 'qc_t',
          'th_by', 'th_t')
 _HEADS = (
-    '#', 'Rack No.', 'Model', 'Qty',
+    '#', 'Rack No.', 'Model', 'Cards',
     'SMT Operator', 'Line', 'SMT Handover (IST)',
     'QC Result', 'QC Inspector', 'QC Time (IST)',
     'TH Taken By', 'TH Time (IST)',
@@ -57,6 +59,41 @@ def _today_ist_range():
     start = ist_now.replace(hour=0, minute=0, second=0, microsecond=0) - IST
     end   = ist_now.replace(hour=23, minute=59, second=59, microsecond=0) - IST
     return start.isoformat(), end.isoformat()
+
+
+def _month_range(year: int, month: int):
+    """Return (utc_start, utc_end, 'Month YYYY') for the given IST year/month."""
+    last_day = _calendar.monthrange(year, month)[1]
+    base = datetime(year, month, 1)
+    start_utc = base - IST
+    end_utc   = base.replace(day=last_day, hour=23, minute=59, second=59) - IST
+    label = base.strftime('%B %Y')
+    return start_utc.isoformat(), end_utc.isoformat(), label
+
+
+def _months_in_range(utc_from: str, utc_to: str):
+    """Return list of (year, month) IST months spanned by the UTC range."""
+    if not utc_from or not utc_to:
+        return []
+    try:
+        def _to_ist_ym(iso):
+            dt = datetime.fromisoformat(iso)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            ist = dt + IST
+            return ist.year, ist.month
+
+        y0, m0 = _to_ist_ym(utc_from)
+        y1, m1 = _to_ist_ym(utc_to)
+        months, y, m = [], y0, m0
+        while (y, m) <= (y1, m1):
+            months.append((y, m))
+            m += 1
+            if m > 12:
+                m, y = 1, y + 1
+        return months
+    except Exception:
+        return []
 
 
 class LookupTab:
@@ -237,8 +274,8 @@ class LookupTab:
         for r in results:
             m = r['model']
             if m not in md:
-                md[m] = {'qty': 0, 'pending': 0, 'ok_fg': 0, 'at_th': 0, 'not_ok': 0}
-            md[m]['qty'] += r['quantity']
+                md[m] = {'cards': 0, 'pending': 0, 'ok_fg': 0, 'at_th': 0, 'not_ok': 0}
+            md[m]['cards'] += settings.resolve_cards(r['quantity'], r.get('cards'), m)
             qr = r['qc_result']
             if qr == 'PENDING':
                 md[m]['pending'] += 1
@@ -258,8 +295,8 @@ class LookupTab:
             if d['ok_fg']:   detail.append(f"{r(d['ok_fg'])} in FG")
             if d['pending']: detail.append(f"{r(d['pending'])} pending")
             if d['not_ok']:  detail.append(f"{r(d['not_ok'])} NOT OK")
-            parts.append(f"{model}: {d['qty']}  ({',  '.join(detail)})" if detail
-                         else f"{model}: {d['qty']}")
+            parts.append(f"{model}: {d['cards']} cards  ({',  '.join(detail)})" if detail
+                         else f"{model}: {d['cards']} cards")
 
         self._model_summary_var.set('   |   '.join(parts))
 
@@ -267,11 +304,12 @@ class LookupTab:
         self._tree.delete(*self._tree.get_children())
         for i, c in enumerate(results):
             tag = 'odd' if i % 2 == 0 else 'even'
+            cards = settings.resolve_cards(c['quantity'], c.get('cards'), c['model'])
             self._tree.insert('', 'end', tags=(tag,), values=(
                 i + 1,
                 c['rack_number'],
                 c['model'],
-                c['quantity'],
+                cards,
                 c.get('smt_operator') or '—',
                 c.get('line') or '—',
                 to_ist(c['smt_time']) if c.get('smt_time') else '—',
@@ -413,7 +451,7 @@ class LookupTab:
         WHITE = PatternFill('solid', fgColor='FFFFFF')
 
         col_headers = [
-            'Sr. No.', 'Rack Number', 'Model', 'Qty',
+            'Sr. No.', 'Rack Number', 'Model', 'Cards',
             'SMT Operator', 'Line', 'SMT Handover Time (IST)',
             'QC Result', 'NOT OK Reason', 'QC Inspector', 'QC Time (IST)',
             'TH Taken By', 'TH Time (IST)',
@@ -428,9 +466,10 @@ class LookupTab:
         WRAP = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
         for i, cycle in enumerate(self._results, 1):
+            cards = settings.resolve_cards(cycle['quantity'], cycle.get('cards'), cycle['model'])
             ws.append([
                 i,
-                cycle['rack_number'], cycle['model'], cycle['quantity'],
+                cycle['rack_number'], cycle['model'], cards,
                 cycle.get('smt_operator') or '',
                 cycle.get('line') or '',
                 to_ist(cycle['smt_time']) if cycle.get('smt_time') else '',
@@ -496,23 +535,23 @@ class LookupTab:
         ws2.append([])
 
         _sec('BY MODEL  (status as of search window)')
-        _thdr('Model', 'Cycles', 'Pending', 'Pend Qty',
-              'OK/FG', 'FG Qty', 'At TH', 'TH Qty',
-              'NOT OK', 'NOK Qty', 'Total Qty')
+        _thdr('Model', 'Cycles', 'Pending', 'Pending',
+              'OK/FG', 'OK/FG', 'At TH', 'At TH',
+              'NOT OK', 'NOT OK', 'Total Cards')
         md = {}
         for r in self._results:
             m = r['model']
             md.setdefault(m, [0, 0,0, 0,0, 0,0, 0,0])
             md[m][0] += 1
-            q = r['quantity']
+            q = settings.resolve_cards(r['quantity'], r.get('cards'), m)
             s = ws(r)
             if s == 'PENDING':  md[m][1] += 1; md[m][2] += q
             elif s == 'OK_FG':  md[m][3] += 1; md[m][4] += q
             elif s == 'TH':     md[m][5] += 1; md[m][6] += q
             elif s == 'NOT_OK': md[m][7] += 1; md[m][8] += q
         for j, (m, v) in enumerate(sorted(md.items()), 1):
-            total_qty = v[2] + v[4] + v[6] + v[8]
-            _drow([m, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], total_qty],
+            total_cards = v[2] + v[4] + v[6] + v[8]
+            _drow([m, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], total_cards],
                   j % 2 == 0)
         ws2.append([])
 
@@ -533,6 +572,87 @@ class LookupTab:
 
         for col, w in enumerate([18, 8, 9, 9, 9, 9, 9, 9, 9, 9, 10], 1):
             ws2.column_dimensions[get_column_letter(col)].width = w
+
+        # Monthly summary sheets — one per IST month spanned by the search window
+        for yr, mo in _months_in_range(utc_from, utc_to):
+            mo_from, mo_to, mo_label = _month_range(yr, mo)
+            mo_results = database.get_cycles(utc_from=mo_from, utc_to=mo_to)
+            ws3 = wb.create_sheet(mo_label)
+
+            def _sec3(t, _ws=ws3):
+                _ws.append([t]); _ws.cell(_ws.max_row, 1).font = SEC
+            def _thdr3(*cols, _ws=ws3):
+                _ws.append(list(cols)); r3 = _ws.max_row
+                for c in range(1, len(cols)+1):
+                    cell = _ws.cell(r3, c)
+                    cell.fill = SHDR; cell.font = SHDR_F
+                    cell.alignment = CENTER; cell.border = BORDER
+            def _drow3(vals, alt, _ws=ws3):
+                _ws.append(vals); f3 = ALT if alt else WHITE
+                for c in range(1, len(vals)+1):
+                    cell = _ws.cell(_ws.max_row, c)
+                    cell.fill = f3; cell.font = NORM_FONT
+                    cell.alignment = CENTER; cell.border = BORDER
+
+            def _ws3_status(r, _f=mo_from, _t=mo_to):
+                return self._window_status(r, _f, _t)
+
+            mo_pending = [r for r in mo_results if _ws3_status(r) == 'PENDING']
+            mo_ok_fg   = [r for r in mo_results if _ws3_status(r) == 'OK_FG']
+            mo_at_th   = [r for r in mo_results if _ws3_status(r) == 'TH']
+            mo_not_ok  = [r for r in mo_results if _ws3_status(r) == 'NOT_OK']
+
+            _sec3('OVERALL TOTALS')
+            for lbl, val in [('Total Cycles', len(mo_results)),
+                             ('Pending for QC', len(mo_pending)),
+                             ('QC OK — In FG', len(mo_ok_fg)),
+                             ('Sent to TH', len(mo_at_th)),
+                             ('QC NOT OK — Returned to SMT', len(mo_not_ok))]:
+                ws3.append([lbl, val])
+                for c in [1, 2]:
+                    cell = ws3.cell(ws3.max_row, c)
+                    cell.fill = WHITE; cell.font = TOT
+                    cell.alignment = CENTER; cell.border = BORDER
+            ws3.append([])
+
+            _sec3('BY MODEL')
+            _thdr3('Model', 'Cycles', 'Pending', 'Pending',
+                   'OK/FG', 'OK/FG', 'At TH', 'At TH',
+                   'NOT OK', 'NOT OK', 'Total Cards')
+            mmd = {}
+            for r in mo_results:
+                m = r['model']
+                mmd.setdefault(m, [0, 0,0, 0,0, 0,0, 0,0])
+                mmd[m][0] += 1
+                q = settings.resolve_cards(r['quantity'], r.get('cards'), m)
+                s = _ws3_status(r)
+                if s == 'PENDING':  mmd[m][1] += 1; mmd[m][2] += q
+                elif s == 'OK_FG':  mmd[m][3] += 1; mmd[m][4] += q
+                elif s == 'TH':     mmd[m][5] += 1; mmd[m][6] += q
+                elif s == 'NOT_OK': mmd[m][7] += 1; mmd[m][8] += q
+            for j, (m, v) in enumerate(sorted(mmd.items()), 1):
+                total_cards = v[2] + v[4] + v[6] + v[8]
+                _drow3([m, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], total_cards],
+                       j % 2 == 0)
+            ws3.append([])
+
+            _sec3('BY RACK')
+            _thdr3('Rack Number', 'Cycles', 'Pending', 'OK/FG', 'At TH', 'NOT OK')
+            rrd = {}
+            for r in mo_results:
+                rk = r['rack_number']
+                rrd.setdefault(rk, [0,0,0,0,0])
+                rrd[rk][0] += 1
+                s = _ws3_status(r)
+                if s == 'PENDING':  rrd[rk][1] += 1
+                elif s == 'OK_FG':  rrd[rk][2] += 1
+                elif s == 'TH':     rrd[rk][3] += 1
+                elif s == 'NOT_OK': rrd[rk][4] += 1
+            for j, (rk, vals) in enumerate(sorted(rrd.items()), 1):
+                _drow3([rk]+vals, j % 2 == 0)
+
+            for col, w in enumerate([18, 8, 9, 9, 9, 9, 9, 9, 9, 9, 10], 1):
+                ws3.column_dimensions[get_column_letter(col)].width = w
 
         wb.save(path)
 

@@ -3,7 +3,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from utils import to_ist
-from ui_helpers import colored_btn, BG
+from ui_helpers import colored_btn, BG, attach_rack_blocker
 
 
 def show_th_verify_dialog(ok_scan, parent) -> str:
@@ -74,6 +74,9 @@ class _THVerifyDialog:
                 self._taken_var.set(u)
 
         self._taken_var.trace_add('write', _upper)
+        attach_rack_blocker(self._taken_var,
+            lambda: self._err_var.set(
+                'Rack barcode entered — type the operator name here.'))
         self._taken_entry = ttk.Entry(taken_row, textvariable=self._taken_var,
                                       font=('Segoe UI', 12))
         self._taken_entry.grid(row=0, column=1, sticky='ew', ipady=5)

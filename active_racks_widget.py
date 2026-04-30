@@ -3,12 +3,13 @@ import tkinter as tk
 from tkinter import ttk
 
 import database
+import settings
 from utils import to_ist
 from ui_helpers import scrolled_tree, fill_tree, BG
 
-_COLS = ('rack', 'model', 'qty', 'inspector', 'since')
-_HEADS = ('Rack No.', 'Model', 'Qty', 'Inspected By', 'In FG Since (IST)')
-_WIDTHS = {'qty': 60, 'since': 160}
+_COLS = ('rack', 'model', 'panels', 'cards', 'inspector', 'since')
+_HEADS = ('Rack No.', 'Model', 'Panels', 'Cards', 'Inspected By', 'In FG Since (IST)')
+_WIDTHS = {'panels': 70, 'cards': 70, 'since': 160}
 _STRETCH = ('rack', 'model', 'inspector', 'since')
 
 
@@ -36,8 +37,11 @@ class ActiveRacksWidget:
         self._tree.delete(*self._tree.get_children())
         for i, r in enumerate(racks):
             tag = 'odd' if i % 2 == 0 else 'even'
+            qty = r['quantity']
+            cards_val = r['cards'] if 'cards' in r.keys() else None
+            cards = settings.resolve_cards(qty, cards_val, r['model'])
             self._tree.insert('', 'end', tags=(tag,), values=(
-                r['rack_number'], r['model'], r['quantity'],
+                r['rack_number'], r['model'], qty, cards,
                 r['inspected_by'], to_ist(r['created_at']),
             ))
 
