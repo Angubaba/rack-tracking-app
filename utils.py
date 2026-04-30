@@ -3,7 +3,7 @@ from datetime import datetime, timezone, timedelta
 
 IST_OFFSET = timedelta(hours=5, minutes=30)
 
-RACK_PATTERN = re.compile(r"^(PR|MR)/\d+$")
+RACK_PATTERN = re.compile(r"^(PR|MR)/\d+$|^T\d+$|^TRAY$", re.IGNORECASE)
 
 
 def to_ist(utc_iso_str: str) -> str:

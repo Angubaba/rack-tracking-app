@@ -89,7 +89,7 @@ def attach_rack_cleaner(var):
     var.trace_add('write', _clean)
 
 
-_RACK_LIKE = _re.compile(r'^(PR|MR)/\d', _re.IGNORECASE)
+_RACK_LIKE = _re.compile(r'^(PR|MR)/\d|^T\d|^TRAY$', _re.IGNORECASE)
 
 
 def attach_rack_blocker(var, on_blocked):

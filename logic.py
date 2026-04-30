@@ -135,12 +135,14 @@ def perform_smt_handover(
     quantity: int,
     smt_operator: str,
     line: str,
+    cards: Optional[int] = None,
 ) -> ScanResult:
-    """Validate and insert an SMT handover."""
+    """Validate and insert an SMT handover. Pass cards to override auto-calculation."""
     result = validate_smt_handover(rack_number, model, quantity, smt_operator, line)
     if not result.success:
         return result
-    cards = quantity * settings.get_cards_per_panel(model)
+    if cards is None:
+        cards = quantity * settings.get_cards_per_panel(model)
     smt_id = database.insert_smt_handover(rack_number, model, quantity, smt_operator, line, cards)
     return ScanResult(True, f"Rack {rack_number} handed over to QC.", "success", smt_id)
 

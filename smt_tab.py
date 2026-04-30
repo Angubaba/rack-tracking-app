@@ -10,7 +10,7 @@ from pending_qc_widget import PendingQCWidget
 from ui_helpers import (
     BG, colored_btn, form_label, readonly_entry, text_entry,
     status_label, make_upper, STATUS_FG, scanner_guard, attach_rack_cleaner,
-    attach_rack_blocker,
+    attach_rack_blocker, ask_yes_no,
 )
 
 
@@ -19,6 +19,7 @@ class SMTTab:
         self.frame = ttk.Frame(parent, padding=14)
         self.frame.columnconfigure(1, weight=1)
         self._last_smt_id = None
+        self._cards_override = None
         self._autocomplete_models = []
         self._build()
         self._tick()
@@ -91,13 +92,20 @@ class SMTTab:
         self._qty_entry.bind('<Return>', lambda e: self._op_entry.focus())
         row += 1
 
-        # Cards (computed, readonly)
+        # Cards (computed, readonly — with manual override button)
         form_label(f, 'CARDS:', row)
         self._cards_var = tk.StringVar(value='—')
-        tk.Entry(f, textvariable=self._cards_var, state='readonly',
-                 font=('Segoe UI', 11), bg='#e7f5ff', fg='#1864ab',
-                 readonlybackground='#e7f5ff', relief='solid', bd=1,
-                 width=14).grid(row=row, column=1, sticky='w', pady=3, ipady=4)
+        cards_frame = ttk.Frame(f)
+        cards_frame.grid(row=row, column=1, sticky='w', pady=3)
+        self._cards_entry = tk.Entry(
+            cards_frame, textvariable=self._cards_var, state='readonly',
+            font=('Segoe UI', 11), bg='#e7f5ff', fg='#1864ab',
+            readonlybackground='#e7f5ff', relief='solid', bd=1, width=14)
+        self._cards_entry.pack(side='left', ipady=4)
+        self._edit_cards_btn = colored_btn(
+            cards_frame, 'Edit', 'secondary',
+            self._on_edit_cards, bold=False, pady=4)
+        self._edit_cards_btn.pack(side='left', padx=(6, 0))
         row += 1
 
         # SMT Operator
@@ -200,6 +208,12 @@ class SMTTab:
     def _on_qty_change(self, *_):
         if not hasattr(self, '_cards_var'):
             return
+        # Clear any manual override when qty or model changes
+        self._cards_override = None
+        if hasattr(self, '_cards_entry'):
+            self._cards_entry.config(readonlybackground='#e7f5ff', bg='#e7f5ff')
+        if hasattr(self, '_edit_cards_btn'):
+            self._edit_cards_btn.config(text='Edit')
         model = self._model_var.get().strip().upper()
         qty_raw = self._qty_var.get().strip()
         try:
@@ -211,6 +225,69 @@ class SMTTab:
                 self._cards_var.set('—')
         except ValueError:
             self._cards_var.set('—')
+
+    # ── Manual cards override ─────────────────────────────────────────────────
+
+    def _on_edit_cards(self):
+        current = self._cards_var.get()
+        label = 'manually set' if self._cards_override is not None else 'auto-calculated'
+        if not ask_yes_no(
+            'Override Card Count',
+            f'Cards are currently {label} as {current}.\n\n'
+            'Some cards may be crossed out. Override with a manual count?'
+        ):
+            return
+
+        dlg = tk.Toplevel(self.frame.winfo_toplevel())
+        dlg.title('Enter Card Count')
+        dlg.resizable(False, False)
+        dlg.grab_set()
+        dlg.transient(self.frame.winfo_toplevel())
+
+        frm = ttk.Frame(dlg, padding=20)
+        frm.pack(fill='both', expand=True)
+
+        ttk.Label(frm, text='Enter actual card count:',
+                  font=('Segoe UI', 11, 'bold')).pack(anchor='w')
+
+        cards_var = tk.StringVar(value=current if current != '—' else '')
+        entry = ttk.Entry(frm, textvariable=cards_var,
+                          font=('Segoe UI', 14), width=12)
+        entry.pack(fill='x', pady=(8, 4), ipady=6)
+
+        err_var = tk.StringVar()
+        tk.Label(frm, textvariable=err_var, font=('Segoe UI', 10),
+                 fg='#c92a2a', bg=BG).pack(anchor='w', pady=(0, 8))
+
+        result = [None]
+
+        def _confirm(_=None):
+            try:
+                n = int(cards_var.get().strip())
+                if n < 0:
+                    raise ValueError
+                result[0] = n
+                dlg.destroy()
+            except ValueError:
+                err_var.set('Enter a valid whole number ≥ 0.')
+
+        btn_row = ttk.Frame(frm)
+        btn_row.pack(fill='x')
+        colored_btn(btn_row, 'Cancel', 'secondary',
+                    dlg.destroy, bold=False, pady=5).pack(side='left', padx=(0, 8))
+        colored_btn(btn_row, 'Set Cards', 'warning',
+                    _confirm, pady=5).pack(side='left')
+
+        entry.bind('<Return>', _confirm)
+        entry.focus()
+        entry.select_range(0, 'end')
+        dlg.wait_window()
+
+        if result[0] is not None:
+            self._cards_override = result[0]
+            self._cards_var.set(str(result[0]))
+            self._cards_entry.config(readonlybackground='#fff3bf', bg='#fff3bf')
+            self._edit_cards_btn.config(text='Edit (manual)')
 
     # ── Tick ─────────────────────────────────────────────────────────────────
 
@@ -247,7 +324,8 @@ class SMTTab:
             self._model_entry.focus()
             return
 
-        result = perform_smt_handover(rack, model, qty, operator, line)
+        result = perform_smt_handover(rack, model, qty, operator, line,
+                                      cards=self._cards_override)
         self._set_status(result.message, result.status)
 
         if result.success:
@@ -257,6 +335,9 @@ class SMTTab:
                 v.set('')
             self._qty_var.set('')
             self._cards_var.set('—')
+            self._cards_override = None
+            self._cards_entry.config(readonlybackground='#e7f5ff', bg='#e7f5ff')
+            self._edit_cards_btn.config(text='Edit')
             self._pending.refresh()
 
         self._rack_entry.focus()
